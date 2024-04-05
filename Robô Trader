@@ -1,0 +1,232 @@
+//Robô 01 
+//https://www.youtube.com/watch?v=xFPWiHxLU9I&t=1183s
+
+Input
+Alvo(1.15);
+Stop(0.90);
+HoraInicio(920);
+HoraFim(1700);
+HoraFechamento(1740);
+
+var
+Vol, sAtr : Float;
+
+Inicio
+  sAtr := StopAtr(2, 20, 0)|0|;
+  Vol := AvgTrueRange(10,0);
+
+  Se (IsBought) entao 
+    Inicio
+      SellToCoverLimit(BuyPrice+(Vol*Alvo));
+      SellToCoverStop(BuyPrice-(Vol*Stop), BuyPrice-(Vol*Stop)-100;
+    Fim;
+    
+  Se (IsSold) entao
+    Inicio
+      BuyToCoverLimit(SellPrice-(Vol*Alvo));
+      BuyToCoverStop(SellPrice+(Vol*Stop), SellPrice+(Vol*Stop)+100);
+    Fim;
+
+  Se (HasPosition = False) e (Time >= HoraInicio) e (Time < HoraFim) entao
+    Inicio
+      Se (Minima > sAtr) entao
+        BuyLimit(sAtr);
+
+      Se (Maxima < sAtr) entao
+        SellShortLimit(sAtr);
+
+    Fim;
+
+  Se (Time > HoraFechamento) entao ClosePosition;
+
+Fim;
+
+//////////////////////////////////////////////////////////////
+//Robô 02
+//##############################
+//https://www.youtube.com/watch?v=-6Qb5owb_ys
+//////////////////////////////////////////////////////////////
+
+input
+offset(20)
+
+var
+
+mm, vlStopC, vlrStopV: real;
+sinalC, sinalV : booleano;
+
+begin
+//carregar o indicador
+
+mm := MediaExp(9,close);
+
+//sinais de entrada
+sinalC := (mm[2] > mm[1]) e (mm[1] < mm[0]);
+sinalV := (mm[2] < mm[1]) e (mm[1] > mm[0]);
+
+//EXECUÇÃO DA ENTRADA
+se (not HasPosition) e sinalC entao BuyStop((maxima[0]+MinPriceIncrement), (maxima[0]+MinPriceIncrement)+(offSet*MinPriceIncrement));
+se (not HasPosition) e sinalV entao SellShortStop((minima[0]-MinPriceIncrement), (minima[0]-MinPriceIncrement)-(offSet*MinPriceIncrement));
+
+
+//EXECUÇÃO DA SAÍDA
+vlrStopC := minima[0];
+vlrStopV := maxima[0];
+
+se IsBought entao SellToCoverStop(vlrStopC, vlrStopC-(offSet*MinPriceIncrement));
+se IsSold entao BuyCoverStop(vlrStopV, vlrStopV+(offSet*MinPriceIncrement));
+
+
+//EXECUCAO DE SAIDA DO GAP
+se IsBought e (close < vltStopC) entao closeposition;
+se IsSold e (close > vlrStopV) entao closeposition;
+
+
+//PLOTGEM
+plot(mm);
+
+end;
+
+
+//////////////////////////////////////////////////////////////
+//ROBÔ 03
+//https://www.youtube.com/watch?v=VcMrHy_YPwE&t=1087s
+//////////////////////////////////////////////////////////////
+var
+Stop, hpb, lpv, lpc, mAtr, Atr, hpc: Float;
+SinalSC, AinalSV, SinalV, SinalC : Boolean;
+
+Inicio
+  hpc:= Highest(high, 20);
+  lpc := Lowest(Low, 10);
+
+  hpv:= Highest(High, 10);
+  lpv:= Lowest(Low, 20);
+
+atr := AvgTrueRange(20,0);
+mAtr := media(20, atr);
+
+SinalC := (close > hpc[1]);
+SinalSC := (close < lpc[1]);
+
+SinalV := (Close < lpv[1]);
+SinalSV := (close > hpv[1]);
+
+Se SinalC entao PaintBar(ClLIme);
+Se SinalV entao PaintBar(255);
+
+Se IsBought entao
+  Inicio
+    Se SinalSC entao closeposition;
+
+    SellToCoverStop(BuyPrice-Stop, BuyPrice-Stop-500);
+  Fim;
+
+  Se isSold entao
+    Inicio
+      Se SinalSV entao ClosePosition;
+      BuyToCoverStop(SellPrice+Stop, SellPrice+Stop+500);
+    Fim;
+  
+  Se (HasPosition = false) entao
+    Inicio  
+      Stop :=mArt*2;
+      Se SinalC entao BuyArtMarket;
+      se SinalV entao SellShortAtMarket;
+
+  Fim;
+
+
+//=================================================
+  //ROBÔ 04
+//https://www.youtube.com/watch?v=Z9ejjQVhxr0&t=13s
+
+INput
+PeriodoMedia(9);
+Desvio(2.00);
+Periodo(20);
+Tipo(0);
+
+var
+  SinalC, SinalV : Boolean;
+  sAtr, m: Float;
+
+  begin
+    m:= MediaExp(PeriodoMedia, close);
+    sAtr:= StopAtr(Desvio, Periodo, Tipo)|1|;
+
+    SinalC := (m[0] > m[1]) e (m[1] < m[2]) e (m[2] > m[3]) e (m[3] > m[4]) e (m[4] > m[5]) e (m[5] > m[6]) e (Low[0] >= Low[1]);
+    SinalV := (m[0] < m[1]) e (m[1] > m[2]) e (m[2] < m[3]) e (m[3] < m[4]) e (m[4] < m[5]) e (m[5] < m[6]) e (high[0] <=high[1]);
+
+    Se SinalC entao PaintBar(ClLIme);
+    Se SinalV entao Position(255);
+
+    Se Isbought e (sAtr=1) entao closeposition;
+    se IsSold e (sAtr=0) entao  closeposition;
+
+
+    Se HasPosition = Falso entao
+      Inicio
+        Se SinalC e (sAtr = 0) entao BuyStop(High*MinPriceIncrement, High+MinPriceIncrement+50)
+        se SinalV e (sAtr = 1) entao SellShortStop(Low-MinPriceIncrement, Low-MinPriceIncrement - 50)
+      Fim;
+
+ end;
+
+/////////////////////////////////////**//
+
+//robô 05
+//https://www.youtube.com/watch?v=J1FDyGhdPwY
+/////////////////////////////////////**//
+PARAMETRO
+  PeriodoIFR(2);
+  NivelIFRc(15);
+  NivelIFRv(95);
+  PeriodoMediaC(5);
+  PeriodoMediaG(150);
+
+var
+  sinalC, sinalV : booleano;
+  precoAlvo : real;
+  vlrIFR, mmC, mmG : real;
+
+Inicio
+//PASSO 01 | CARREGAR INDICADOR
+
+//mmC média movel curta
+//mmG média movel longa
+vlrIFR := rsi(PeriodoIFR,0),
+mmC:= media(PeriodoMediaC, fechamento);
+mmG:= media(PeriodoMediaG, fechamento);
+
+//PASSO 2 | SINAIS DE ENTRADA
+sinalC := (vlrIFR < NivelIFRc) e (mmC > fechamento) e (mmG[1] < mmG);
+sinalV := (vlrIFR > NivelIFRv) e (mmC < fechamento) e (mmG[1] > mmG);
+
+//PASSO 03 | EXECUCAO DE ENTRADA
+se (sinalC) e (not HasPosition) entao BuyAtMarket
+senao se (sinalV)  e (not HasPosition) entao SellShortAtMarket;
+
+//PASSO 04| EXECUCAO DE SAÍDA
+se (iSBought) entao
+Inicio 
+  SellToCovertLimit(mmC);
+  se (fechamento > ByPrice) entao closeposition;
+fim
+senao se (IsSold) entao
+Inicio
+  BuyToCoverLimit(mmC);
+  se (fechamento < SellPrice) entao closeposition;
+fim;
+
+//PASSO 5 | COLORAÇÃO
+
+se sinalC então PaintBar(clverdelimao)
+senao se sinalV entao PaintBar(clvermelho)
+
+//PASSO 6 | PLOTAGEM
+
+plot(mmC); SetPlotColor(1,clfucsia); SetPlotWidth(1,2);
+plot2(mmC); SetPlotColor(2,clamarelo); SetPlotWidth(2,2);
+
+FIM;
