@@ -230,3 +230,96 @@ plot(mmC); SetPlotColor(1,clfucsia); SetPlotWidth(1,2);
 plot2(mmC); SetPlotColor(2,clamarelo); SetPlotWidth(2,2);
 
 FIM;
+
+
+
+/////////////////////////////////////**//
+//robô 06
+//https://www.youtube.com/watch?v=QTIVjQ-2mko&t=1588s
+/////////////////////////////////////**//
+
+Input
+Percentual(0.10);
+
+var
+Vwap1,Vwap2,Vwap3,VwapM1,VwapM2, VwapM3: Float;
+
+Inicio
+
+Vwap1 := Vwap(1)+(Vwap(1)*((Percental*1)/100));
+Vwap2 := Vwap(1)+(Vwap(1)*((Percental*2)/100));
+Vwap3 := Vwap(1)+(Vwap(1)*((Percental*3)/100));
+
+VwapM1 := Vwap(1)-(Vwap(1)*((Percental*1)/100));
+VwapM2 := Vwap(1)-(Vwap(1)*((Percental*2)/100));
+VwapM3 := Vwap(1)-(Vwap(1)*((Percental*3)/100));
+
+Se (Hasposition = False) entao
+  Inicio
+  //Vwap Positiva
+    Se(Fechamento > Vwap(1)) e (Fechamento < Vwap1) entao
+      Inicio  
+        SellShortLimit(Vwap1);
+        BuyLimit(Vwap(1));
+        Fim;
+      se (Fechamento > Vwap1) e (Fechamento < Vwap2) entao
+        Inicio 
+          SellShortLimit(Vwap2);
+          BuyLimit(Vwap1);
+        Fim;
+      
+      Se (Fechamento > Vwap2) e (Fechamento < Vwap3) entao
+        Inicio 
+          SellShortLimit(Vwap3);
+          BuyLimit(Vwap2);
+        Fim;
+      
+       Se (Fechamento > Vwap3) entao
+        Inicio           
+          BuyLimit(Vwap3);
+        Fim;
+
+
+    //Vwap negativa
+    se (Fechamento < Vwap(1)) e (Fechamento>VwapM1) entao
+      Inicio
+        SellShortLimit(Vwap(1));
+        BuyLimit(VwapM1);
+      Fim;
+
+    se (Fechamento < VwapM1) e (Fechamento>VwapM2) entao
+      Inicio
+        SellShortLimit(Vwap1);
+        BuyLimit(VwapM2);
+      Fim;
+
+
+se (Fechamento < VwapM2) e (Fechamento>VwapM3) entao
+      Inicio
+        SellShortLimit(VwapM2);
+        BuyLimit(VwapM3);
+      Fim;
+
+
+se (Fechamento < VwapM3) entao
+      Inicio
+        SellShortLimit(VwapM3);//comprar     
+      Fim;
+Fim;
+
+(Plot (Vwap1));
+Plot2(Vwap2);
+Plot3(Vwap3);
+
+Plot4(VwapM1);
+Plot5(VwapM2);
+Plot6(VwapM3);
+
+
+Fim;
+
+//vende na primeira Vwap
+//média na segunda vwap
+//média na terceira vwap
+// com estope acima
+// e alvo na VwapM1
