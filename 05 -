@@ -1,0 +1,57 @@
+/////////////////////////////////////**//
+
+//robô 05
+//https://www.youtube.com/watch?v=J1FDyGhdPwY
+/////////////////////////////////////**//
+PARAMETRO
+  PeriodoIFR(2);
+  NivelIFRc(15);
+  NivelIFRv(95);
+  PeriodoMediaC(5);
+  PeriodoMediaG(150);
+
+var
+  sinalC, sinalV : booleano;
+  precoAlvo : real;
+  vlrIFR, mmC, mmG : real;
+
+Inicio
+//PASSO 01 | CARREGAR INDICADOR
+
+//mmC média movel curta
+//mmG média movel longa
+vlrIFR := rsi(PeriodoIFR,0),
+mmC:= media(PeriodoMediaC, fechamento);
+mmG:= media(PeriodoMediaG, fechamento);
+
+//PASSO 2 | SINAIS DE ENTRADA
+sinalC := (vlrIFR < NivelIFRc) e (mmC > fechamento) e (mmG[1] < mmG);
+sinalV := (vlrIFR > NivelIFRv) e (mmC < fechamento) e (mmG[1] > mmG);
+
+//PASSO 03 | EXECUCAO DE ENTRADA
+se (sinalC) e (not HasPosition) entao BuyAtMarket
+senao se (sinalV)  e (not HasPosition) entao SellShortAtMarket;
+
+//PASSO 04| EXECUCAO DE SAÍDA
+se (iSBought) entao
+Inicio 
+  SellToCovertLimit(mmC);
+  se (fechamento > ByPrice) entao closeposition;
+fim
+senao se (IsSold) entao
+Inicio
+  BuyToCoverLimit(mmC);
+  se (fechamento < SellPrice) entao closeposition;
+fim;
+
+//PASSO 5 | COLORAÇÃO
+
+se sinalC então PaintBar(clverdelimao)
+senao se sinalV entao PaintBar(clvermelho)
+
+//PASSO 6 | PLOTAGEM
+
+plot(mmC); SetPlotColor(1,clfucsia); SetPlotWidth(1,2);
+plot2(mmC); SetPlotColor(2,clamarelo); SetPlotWidth(2,2);
+
+FIM;

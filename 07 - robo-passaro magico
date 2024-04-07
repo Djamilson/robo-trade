@@ -1,0 +1,49 @@
+/////////////////////////////////////**//
+//robô 07 passaro magico
+//https://www.youtube.com/watch?v=XDq8_9IkWWg&t=1397s
+/////////////////////////////////////**//
+
+Input
+
+var
+
+pSAR : real;
+sinalC, sinalV: booleano;
+
+begin
+//CARREGAR OS INDICADORES
+pSar := ParabolicSAR(0.02,0.20);
+
+//SINAIS DE ENTRADA
+sinalC:= (close[1] < pSAR[1]) e (close[0] > pSAR[0]);
+sinalV:= (close[1] > pSAR[1]) e (close[0] > pSAR[0]);
+
+//EXECUCAO DE ENTRADA
+se (not HasPosition) e sinalC entao BuyAtMarket;
+se (not HasPosition) e sinalV entao SellShortAtMarket;
+
+//EXECUÇÃO DE SÁIDA
+//se IsBought e sinalV entao closeposition;
+//se IsSold e sinalC entao closeposition;
+se IsBought e sinalV entao Reverseposition;
+se IsSold e sinalC entao Reverseposition;
+
+//COLORAÇÃO
+//se sinalC entao PaintBar(cllime);
+//se sinalV entao PaintBar(clred);
+
+se (close > pSAR) entao PaintBar(cllime);
+se (close < pSAR) entao PaintBar(clred);
+
+//SINALIZAÇÃO DAS ENTRDAS
+se sinalC entao PlotText("C", cllime, 0,10);
+se sinalV entao PlotText("V", clred, 2,10);
+
+//se sinalC entao PlotText("$", cllime, 0,15);
+//se sinalV entao PlotText("$", clred, 2,15);
+
+//TESTE
+//plot(pSAR);
+
+
+end;

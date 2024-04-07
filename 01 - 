@@ -1,0 +1,42 @@
+//Robô 01 
+//https://www.youtube.com/watch?v=xFPWiHxLU9I&t=1183s
+
+Input
+Alvo(1.15);
+Stop(0.90);
+HoraInicio(920);
+HoraFim(1700);
+HoraFechamento(1740);
+
+var
+Vol, sAtr : Float;
+
+Inicio
+  sAtr := StopAtr(2, 20, 0)|0|;
+  Vol := AvgTrueRange(10,0);
+
+  Se (IsBought) entao 
+    Inicio
+      SellToCoverLimit(BuyPrice+(Vol*Alvo));
+      SellToCoverStop(BuyPrice-(Vol*Stop), BuyPrice-(Vol*Stop)-100;
+    Fim;
+    
+  Se (IsSold) entao
+    Inicio
+      BuyToCoverLimit(SellPrice-(Vol*Alvo));
+      BuyToCoverStop(SellPrice+(Vol*Stop), SellPrice+(Vol*Stop)+100);
+    Fim;
+
+  Se (HasPosition = False) e (Time >= HoraInicio) e (Time < HoraFim) entao
+    Inicio
+      Se (Minima > sAtr) entao
+        BuyLimit(sAtr);
+
+      Se (Maxima < sAtr) entao
+        SellShortLimit(sAtr);
+
+    Fim;
+
+  Se (Time > HoraFechamento) entao ClosePosition;
+
+Fim;

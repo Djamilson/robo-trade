@@ -1,0 +1,35 @@
+//=================================================
+  //ROBÔ 04
+//https://www.youtube.com/watch?v=Z9ejjQVhxr0&t=13s
+
+INput
+PeriodoMedia(9);
+Desvio(2.00);
+Periodo(20);
+Tipo(0);
+
+var
+  SinalC, SinalV : Boolean;
+  sAtr, m: Float;
+
+  begin
+    m:= MediaExp(PeriodoMedia, close);
+    sAtr:= StopAtr(Desvio, Periodo, Tipo)|1|;
+
+    SinalC := (m[0] > m[1]) e (m[1] < m[2]) e (m[2] > m[3]) e (m[3] > m[4]) e (m[4] > m[5]) e (m[5] > m[6]) e (Low[0] >= Low[1]);
+    SinalV := (m[0] < m[1]) e (m[1] > m[2]) e (m[2] < m[3]) e (m[3] < m[4]) e (m[4] < m[5]) e (m[5] < m[6]) e (high[0] <=high[1]);
+
+    Se SinalC entao PaintBar(ClLIme);
+    Se SinalV entao Position(255);
+
+    Se Isbought e (sAtr=1) entao closeposition;
+    se IsSold e (sAtr=0) entao  closeposition;
+
+
+    Se HasPosition = Falso entao
+      Inicio
+        Se SinalC e (sAtr = 0) entao BuyStop(High*MinPriceIncrement, High+MinPriceIncrement+50)
+        se SinalV e (sAtr = 1) entao SellShortStop(Low-MinPriceIncrement, Low-MinPriceIncrement - 50)
+      Fim;
+
+ end;
