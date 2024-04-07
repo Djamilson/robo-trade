@@ -232,7 +232,6 @@ plot2(mmC); SetPlotColor(2,clamarelo); SetPlotWidth(2,2);
 FIM;
 
 
-
 /////////////////////////////////////**//
 //robô 06
 //https://www.youtube.com/watch?v=QTIVjQ-2mko&t=1588s
@@ -289,7 +288,7 @@ Se (Hasposition = False) entao
 
     se (Fechamento < VwapM1) e (Fechamento>VwapM2) entao
       Inicio
-        SellShortLimit(Vwap1);
+        SellShortLimit(VwapM1);
         BuyLimit(VwapM2);
       Fim;
 
@@ -323,3 +322,38 @@ Fim;
 //média na terceira vwap
 // com estope acima
 // e alvo na VwapM1
+
+
+/////////////////////////////////////**//
+//robô 07 passaro magico
+//https://www.youtube.com/watch?v=XDq8_9IkWWg&t=1397s
+/////////////////////////////////////**//
+
+Input
+
+var
+
+pSAR : real;
+sinalC, sinalV: booleano;
+
+begin
+//CARREGAR OS INDICADORES
+pSar := ParabolicSAR(0.02,0.20);
+
+//SINAIS DE ENTRADA
+sinalC:= (close[1] < pSAR[1]) e (close[0] > pSAR[0]);
+sinalV:= (close[1] > pSAR[1]) e (close[0] > pSAR[0]);
+
+//EXECICAO DE ENTRADA
+se IsBought e sinalV entao closeposition;
+se IsSold e sinalC entao closeposition;
+
+//COLORAÇÃO
+se sinalC entao PaintBar(cllime);
+se sinalV entao PaintBar(clred);
+
+//TESTE
+//plot(pSAR);
+
+
+end;
