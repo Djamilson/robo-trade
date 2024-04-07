@@ -1,0 +1,44 @@
+input
+
+VolumeDirecional(5);
+
+var
+VD, VP, VN: Float;
+SinalC, SinalV: Boolean;
+
+begin
+
+//INICIALIZA VARIAVEL
+VD:= VolumeDirecional*1000000000;
+    
+    Se (Clone > Open) então
+      Inicio 
+        VP :=VP[1]+Volume;
+        VN := 0;
+      fim;
+    
+    se (Clone < open) entao
+      Inicio
+        VN := VN[1]+Volume;
+        VP := 0;
+      fim;
+
+    sinalC := (VN[1] > VD) e (Close[0] > Open[0]);
+    SinalV := (VN[1] > VD) e (Close[0] < Open[0]);
+
+    //regra de coloração
+
+    se SinalC entao PaintBar(clLime);
+    se SinalV entao PaintBar(255);
+
+
+    se HasPosition = false entao
+      Inicio  
+        se sinalC entao BuyAtMarket;
+        se SinalV entao SellShortAtMarket;
+      fim
+      
+    Plot(VP);
+    Plot2(VN);
+
+Fim;
