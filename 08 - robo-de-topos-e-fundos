@@ -4,13 +4,14 @@
 /////////////////////////////////////**//
 
 input
+Rompimento(true);
+SuporteResistencia(false);
 Periodo(10)
 Deslocamento(0);
 
 var
 A, B, mMin, mMax : Float;
 Topo, Fundo, MediaL : Float;
-
 Return, validade : Inteiro;
 
 begin
@@ -31,6 +32,27 @@ se (A <= mMax) entao
 
 
 Plot(Topo);
+  SetPlotColor(1,cllime);
 Plot2(Fundo);
+  SetPlotColor(2,255);
+
+
+  ///////////////// EXECUTA ORDEM/////////////
+  se (Rompimento) e (SuporteResistencia = False) entao
+    Inicio
+      se (High < Top) entao
+        BuyStop(Top, Topo+30);
+      se (Low > Fundo) entao
+        SellShortStop(Fundo, Fundo-30);
+    Fim
+
+
+ se (Rompimento = false) e (SuporteResistencia) entao
+    Inicio
+      se (High < Top) entao
+        SellShortLimit(Topo);
+      se (Low > Fundo) entao
+        BuyLimit(Fundo);
+    Fim;
 
 end;

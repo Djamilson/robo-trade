@@ -1,0 +1,27 @@
+input
+MediaRef(200);
+MacdLonga(26);
+MacdCurta(12);
+MacdSinal(9);
+
+var
+mRef, xMacd, mSinal: Float;
+Sinalc, SinalV : Boolean;
+
+begin
+  mRef := Media(MediaRef, close);
+  xMacd := Macd(MacdLonga, MacdCurta, MacdSinal)|0|;
+  mSinal := MediaExp(MacdSinal, xMacd);
+
+  SinalC := (ADX(9,9) > 25) e ((xMacd[1] < mSinal[1]) e (xMacd[0] > mSinal[0])) e (close > mRef) e (close > Open) e (xMacd < 0);
+  SinalV := (ADX(9,9) > 25) e ((xMacd[1] > mSinal[1]) e (xMacd[0] < mSinal[0])) e (close < mRef) e (close < Open) e (xMacd < 0);
+
+  se sinalC entao PaintBar(clLime);
+  se sinalV entao PaintBar(255);
+
+  se (HasPosition = False)  entao
+    Inicio
+      se SinalC entao  BuyAtMarket;
+      se SinalV entao  SellShortAtMarket;
+    fim;
+end;
