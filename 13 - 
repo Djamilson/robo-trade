@@ -1,0 +1,31 @@
+///https://www.youtube.com/watch?v=o_5yHGnlLHg
+
+input
+mm(10); //periodos
+mm2(13);
+
+var
+mediaMovelPrincipal, mediaMovelDeslocada: float;
+
+begin
+  mediaMovelPrincipal := Media(mm, Close);
+  mediaMovelDeslocada := Media(mm2,Close)[1];
+
+  Plot(mediaMovelPrincipal);
+
+  Plot2(mediaMovelDeslocada);
+  setPlotColor(2, clBlue);
+
+
+  //entrada
+  if (BuyPosition = 0) and (mediaMovelPrincipal > mediaMovelDeslocada) then
+    begin
+      BuyAtMarket;
+    end;
+
+    if (BuyPosition = 1) and (mediaMovelPrincipal < mediaMovelDeslocada) then
+    begin
+      SellToCoverAtMarket;
+    end;
+
+end;

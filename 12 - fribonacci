@@ -1,0 +1,63 @@
+///https://www.youtube.com/watch?v=73L6WUkUyTY&list=PL2WuTAEJyHZOo1zlUCO3tpGN9SRCoCUPp&index=15
+
+input
+
+Zero(109170);
+Cem(108690)
+
+var
+MeiaUm, TrintaeOito: Float; //Cem, Zero
+
+begin
+
+//Gap de abaixa
+
+Se (OpenD(0) < closeD[1] entao)   
+  Inicio 
+    Zero := closeD(1);
+    Cem := OpenD(0);
+
+    TrintaeOito :=  zero - (zero - cem) * 0.618;
+    Cinquenta :=  zero - (zero - cem) * 0.50;
+    MeiaUm :=  zero - (zero - cem) * 0.382;
+  Fim;
+
+  //Gap de Alta
+  se  (OpenD[0] > CloseD(1)) entao
+    Inicio 
+      Zero := OpenD(0);
+      Cem := CloseD(1);
+
+      TrintaeOito :=  zero - (zero - cem) * 0.382;
+      cinquenta :=  zero - (zero - cem) * 0.50;
+      MeiaUm :=  zero - (zero - cem) * 0.618;
+    Fim;
+
+    se (HasPosition = false) entao
+    //muda os valores aqui
+      Inicio 
+        Se (Fechamento > Cinquenta) entao 
+          BuyLimit(Cinquenta);
+        
+        se (Fechamento < Cinquenta) entao
+          SellShortLimit(Cinquenta);
+      Fim;
+
+    Se(Time > 900) entao
+      Inicio
+        Plot(Cem);
+        SetPlotColor(1, clFucsia);
+        Plot2(Zero);
+        SetPlotColor(2,ClWhite);
+
+        Plot3(Cinquenta);
+        SetPlotColor(3,ClRed);
+
+        Plot4(TrintaeOito);
+        SetPlotColor(4,ClBlue);
+
+        Plot5(MeiaUm);
+        SetPlotColor(5,ClLime);
+    Fim;
+
+Fim;
