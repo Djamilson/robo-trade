@@ -1,0 +1,46 @@
+//https://www.youtube.com/watch?v=zmS9drqxMUw
+
+input
+vlrDesvio(1.5);
+vlrPeriodo(20);
+Tipo(0);
+
+var
+sinalC, sinalV, stopC, stopV: booleano;
+cor: inteiro;
+
+///VARIAVEIS DA ESTRATÉGIA
+dirStopATR: real;
+
+inicio
+
+//PASSO 01 | CARREGAR INDICADOR
+dirStopATR := StopAtr(vlrDesvio,vlrPeriodo,Tipo)|1|; //|1| trás a posição do valor, se está acima ou a baixo
+
+//PASSO 02 | SINAIS DE ENTRADA
+sinalC :=(dirStopATR = 0) e (fechamento > abertura);
+sinal :=(dirStopATR = 1) e (fechamento < abertura);
+
+
+//PASSO 03 | SINAIS DE SAIDA
+stopC := (fechamento < abertura);
+stopV := (fechamento > abertura);
+
+se (sinalC) e (not HasPosition) então BuyAtMarket
+senao se (sinalV) e (not HasPosition) entao SellShortAtMarket;
+
+
+//COLORAÇÃO
+se sinalC entao cor:=cllime
+senao se sinalV entao cor:=clred
+senao cor:=clwhite;
+
+se (cor[1] = cllime) e (not stopC) entao cor:=cllime;
+se (cor[1] = clred) e (not stopV) entao cor:= clred;
+
+PaintBar(cor);
+
+//PROTAGEM
+plot(dirStopATR);
+
+FIM;
