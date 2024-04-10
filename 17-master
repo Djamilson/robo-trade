@@ -1,0 +1,164 @@
+//https://www.youtube.com/watch?v=zTvx4bv-K60
+//https://www.youtube.com/watch?v=NimGTX1QEe0
+
+PARAMETRO
+  NivelC(25);
+  NivelV(16)
+
+Var
+sinalC, sinalV, stopC,stopV: booleano;
+  bf: real;
+
+Inicio
+
+//PASSO 1 | RECEBER O VALOR  do indicador
+bF := NelogicaBollomFinder|1|;
+
+//PASSO 2 | SINAIS DE ENTRADA
+sinalC := (bF[1] >= NivelC) e (bF[0] < NivelC) e (fechamento > abertura) e (volume > 0);
+sinalV := (bF[1] <= -NivelV) e (bF[0] > -NivelV) e (fechamento < abertura) e (volume > 0);
+
+//PASSO 3 | SINAIS  DE SAÍDA
+stopC  := (bF >= NivelC);
+stopV := (bF <= -NivelV);
+
+//PASSO 4 | EXECUÇÃO DE ENTRADA
+se (not HasPosition) e sinalC entao BuyAtMarket
+senao se (not  HasPosition) e sinalV entao SellShortAtMarket;
+
+
+//PASSO 5 | EXECUÇÃO DE SAIDA
+se (Isbought) e (stopC) entao SellToCoverAtMarket
+senao se (IsSold) e (stopV) entao BuyToCoverAtMarket;
+
+
+//PASSO 6 | EXECUÇÃO REVERSAO
+se (IsBought) e (sinalV) entao ReversePosition //closePosition
+senao se (IsSold) e (sinalC) entao ReversePosition; //closePosition
+
+
+//PASSO EXTRA 1 | COLORAÇÃO
+se sinalC entao PaintBar(clverdelimao)
+senao se sinalV entao PaintBar(clvermelho);
+
+//PLOTAGEM EXTR | PLOTAGEM
+plotn(1,bf);
+SetPlotType(1,1);
+plotn(2, NivelC);
+plotn(3,-NivelV);
+
+
+Fim;
+
+
+///projeto 02 para unir as regras dos dois projetos
+INput
+PeriodoMedia(9);
+Tipo(0);
+Desvio(2.00);
+Periodo(20);
+
+Var
+  sinalC, SinalV : Boolean;
+  sAtr, m : Float;
+
+begin
+  m := MediaExp(PeriodoMedia, Close);
+  sAtr := StopAtr(Desvio, Periodo, Tipo)|1|;
+
+  //PEGAR O SINAL
+  SinalC := (m[0] > m[1]) e (m[1] < m[2]) e (m[2] > m[3]) e (m[3] > m[4]) e (m[4] > m[5]) e (m[5] > m[6]) e (Low[0]>= Low[1]);
+  SinalV := (m[0] < m[1]) e (m[1] > m[2]) e (m[2] < m[3]) e (m[3] < m[4]) e (m[4] < m[5]) e (m[5] < m[6]) e (high[0]<= high[1]);
+
+
+  se sinalC entao PaintBar(cllime);
+  se SinalV entao PaintBar(255);
+
+  //Isbought => se estou comprado
+  //IsSold => se estou vendido
+        //e (close < m)
+  se Isbought e (sAtr=1) entao ClosePosition;
+  se IsSold e (sAtr=0) entao ClosePosition;
+
+  se HasPosition = false entao
+
+    Inicio
+    //se sAtr 1 porque esta vermelho em vendido
+    //se sAtr 0 porque está verde em comprado
+      se SinalC e (sAtr = 0) entao BuyStop(High+MinPriceIncrement, High+MinPriceIncrement + 50);
+      se SinalV e (sAtr = 1) entao SellShortStop(Low-MinPriceIncrement, Low-MinPriceIncrement - 50);
+    Fim;
+end;
+
+//=========================================
+//=========================================
+//robo 3 para
+//https://www.youtube.com/watch?v=_qWWNndaEiA&t=689s
+
+Var
+  pbh: Float;
+  SinalC, SinalV : Boolean;
+
+Inicio
+  pbh := NelogicaPullBackFinder|1|;
+
+  sinalC := (pbh[1] < 0) e (pbh > 0);
+  sinalV := (pbh[1] > 0) e (pbh < 0);
+  
+  //APLICANDO A COLORAÇÃO
+  Se SinalV entao PaintBar(cllime);
+  se sinalV entao PaintBar(255); 
+Fim;
+///===================================
+//
+Input
+AlvoRico(1.00);
+ColoriInvesSinal(True);
+
+Var
+  StopC, stopV, AlvoC, AlvoV, pbh: Float;
+  SinalC, SinalV : Boolean;
+
+Inicio
+  pbh := NelogicaPullBackFinder|1|;
+
+  se ColorirInvesSinal entao
+    Inicio
+    sinalC := (pbh[1] < 0) e (pbh > 0);
+    sinalV := (pbh[1] > 0) e (pbh < 0);  
+    Fim
+    senao
+      Inicio
+      sinalC := (pbh > 10);
+      sinalV := (pbh < -10);
+      
+      fim;
+  
+  //APLICANDO A COLORAÇÃO
+  Se SinalV entao PaintBar(cllime);
+  se sinalV entao PaintBar(255); 
+
+
+  Se  (IsBought) entao 
+      Inicio
+        SellToCoverLimit(BuyPrice+AlvoC*AlvoRico);
+        SellToCoverStop(StopC, stopC-500);
+      fim;
+
+    se (IsSold) entao
+      inicio
+        BuyToCoverLimit(SellPrice-AlvoV*AlvoRico);
+        BuyToCoverStop(SotpV, stopV+500);
+      fim;
+
+    se (HasPosition = false) entao
+      inicio
+        AlvoC:= (close-Low-MinPriceIncrement);
+        AlvoV:= abs(close-High+MinPriceIncrement);
+        stopC:=Low;
+        stopV:=High;
+
+        se SinalC entao BuyAtMarket;
+        se sinalV entao SellShortAtMarket;
+      fim;
+Fim;
