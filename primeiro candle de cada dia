@@ -1,0 +1,20 @@
+//https://neotraderbot.com/docs/material-iniciantes/programando-estrategias/exemplos-de-codigos/snippets-localizacao-temporal/#identifica%C3%A7%C3%A3o-do-primeiro-candle-de-cada-dia
+//https://neotraderbot.com/docs/material-iniciantes/programando-estrategias/exemplos-de-codigos/snippets-implementacao-de-estrategias/
+//https://neotraderbot.com/docs/material-iniciantes/frameworks-de-programacao-13830/documentacao-14886/gestao-de-risco-do-robo-13865/
+var
+
+  bPrimeiraBarraDoDia : boolean;
+  iDataAtual          : integer;
+begin
+  if (Date() <> iDataAtual) then
+    begin
+      iDataAtual := Date();
+      bPrimeiraBarraDoDia := true;
+    end;
+  if bPrimeiraBarraDoDia then
+    begin
+      bPrimeiraBarraDoDia := false;
+      //Faz alguma coisa na primeira barra do dia
+      paintBar(clGreen);
+    end;
+end

@@ -1,0 +1,186 @@
+// #######################################################################
+// #######################################################################
+// #######################################################################
+// ######                            O                             #######
+// ######                        ____|____                         #######
+// ######                      _|         |_                       #######
+// ######                     (_|  O   O  |_)                      #######
+// ######                       |_________|                        #######
+// ######                                                          #######
+// ###### ____        __        ____________           ________    #######
+// ###### | | \       | |       | |_________|         /  ____  \   #######
+// ###### | |\ \      | |       | |                  /  /    \  \  #######
+// ###### | | \ \     | |       | |____             |  |      |  | #######
+// ###### | |  \ \    | |       | |____|            |  |      |  | #######
+// ###### | |   \ \   | |       | |____|            |  |      |  | #######
+// ###### | |    \ \  | |       | |                 |  |      |  | #######
+// ###### | |     \ \ | |       | |_________         \  \____/  /  #######
+// ###### |_|      \_\|_|       |_|_________|         \________/   #######
+// ######                                                          #######
+// ###### _______  __          __   ____  __   ___    __  _______  #######
+// ######    |    |  \   /\   |  \ |     |  \ |   \  /  \    |     #######
+// ######    |    |__/  /__\  |   ||__   |__/ |___/ |    |   |     #######
+// ######    |    |\   /    \ |   ||     |\   |   \ |    |   |     #######
+// ######    |    | \ /      \|__/ |____ | \  |___/  \__/    |     #######
+// ######                                                          #######
+// ######  Comunidade aberta de automatização de estratégias para  #######
+// ######                    negociação de ativos                  #######
+// ######                                                          #######
+// ######                    www.NeoTraderBot.com                  #######
+// #######################################################################
+// #######################################################################
+// #######################################################################
+//
+// -----------------------------------------------------------------------
+// ---------------------- DADOS DA ESTRATÉGIA ----------------------------
+// -----------------------------------------------------------------------
+//
+// NOME DA ESTRATÉGIA:
+//   DESENVOLVIDA POR:
+//    DATA DE CRIAÇÃO:
+//             VERSÃO:
+//      ATUALIZADA EM:
+// TIPO DE ESTRATÉGIA: ( ) Indicador  ( ) Coloração (X) Execução
+//                     ( ) Screening  ( ) Texto     ( ) Alarme
+//
+// DESCRIÇÃO DA ESTRATÉGIA:
+//
+//
+//
+// -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+//
+// ######################### FIM DO CABEÇALHO ############################
+//
+//
+// -----------------------------------------------------------------------
+// -------------------------- Constantes ---------------------------------
+// OBS:
+// -----------------------------------------------------------------------
+const
+  cPlotarIndicadores = true;
+  //
+  // ---------------------------------------------------------------------
+  // -------------------------- Parâmetros -------------------------------
+  // OBS: Segue abaixo a descrição de cada parâmetro
+  // 1) pXXXXXX ->
+  //
+  // 2) pYYYYYY ->
+  //
+  // 3) pZZZZZZ ->
+  // ---------------------------------------------------------------------
+input
+  pXXXXX(5);
+  pYYYYY(True);
+  pZZZZZ(2.3);
+
+  // ---------------------------------------------------------------------
+  // ---------------------- Variáveis globais ----------------------------
+  // OBS:
+  // ---------------------------------------------------------------------
+var
+//Estrutura padrão do modelo
+bStarted: boolean;
+bSinalCompra, bSinalVenda, bSinalLiquida, bSinalReversao : boolean;
+bComprado, bVendido : boolean;
+
+//Variáveis personalizadas
+iXXXXX, iZZZZZZ: integer;
+fXXXXX, fZZZZZZ: float;
+
+
+
+begin
+
+  // ---------------------------------------------------------------------
+  // ----------------- Inicialização da estratégia -----------------------
+  // OBS: Inicialização de variáveis a serem utilizadas na estratégia de
+  // execução
+  // ---------------------------------------------------------------------
+  if Not bStarted then
+  begin
+    bStarted := True;
+    //Colocar aqui ações que serão executadas apenas no primeiro processamento
+    //da estratégia. Por exemplo, inicialização de variáveis.
+  end;
+
+  // ---------------------------------------------------------------------
+  // ------------ Atribuição de variáveis por processamento --------------
+  // ---------------------------------------------------------------------
+  //Estrutura padrão do modelo
+  bSinalCompra := False;
+  bSinalVenda := False;
+  bSinalLiquida := False;
+  bSinalReversao := False;
+  bComprado := isBought();
+  bVendido := isSold();
+
+  // Atribuições das variáveis da estratégia
+
+
+
+
+  // ---------------------------------------------------------------------
+  // ----------------------- Cálculo dos sinais  -------------------------
+  // OBS: Inserir lógica de cálculo dos sinais de compra/venda/liquidação
+  // e reversão, se for o caso.
+  // ---------------------------------------------------------------------
+  if (...) then
+      bSinalCompra := True;
+
+  if (...) then
+      bSinalVenda := True;
+
+  if bComprado then
+    if (...) then
+      bSinalLiquida := True;
+
+  if bVendido then
+    if (...) then
+      bSinalLiquida := True;
+
+  if bComprado or bVendido then
+      bSinalReversao := True;
+
+
+  // ---------------------------------------------------------------------
+  // -------------- Administração das posições abertas -------------------
+  // OBS: Baseando-se na posição aberta, pode-se implementar lógicas para
+  // atualização de alvo ou stoploss
+  // ---------------------------------------------------------------------
+  if bComprado then
+  begin
+
+  end;
+
+  if bVendido then
+  begin
+
+  end;
+
+  // ---------------------------------------------------------------------
+  // ------------------- Envia ordens de compra/venda --------------------
+  // OBS: Baseando-se nos sinais e na atual posição, cria as ordens de
+  // compra e venda de acordo com o setup desejado
+  // ---------------------------------------------------------------------
+
+
+
+
+
+
+  // ---------------------------------------------------------------------
+  // ------------------------ Plot de Indicadores ------------------------
+  // OBS: É sempre interessante incluir indicadores usados pelo robô para
+  // poder visualizar no gráfico do Módulo de Automação de Estratégias
+  // ---------------------------------------------------------------------
+  if cPlotarIndicadores then
+  begin
+    Plot(...);
+    Plot2(...);
+    Plot3(...);
+
+  end;
+
+end;

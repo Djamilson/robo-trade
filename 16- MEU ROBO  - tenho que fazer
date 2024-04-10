@@ -6,10 +6,10 @@ PercentualFiboV(95);
 SaidaC(1640);
 SaidaV(1640);
 
-
 VAR
-sinalC, sinalV, stopC, stopV: booleano;
+sinal_Venda_Alta,sinal_Venda_Baixa, sinal_Compra_Alta,sinal_Compra_Baixa, sinal_StopLes_Alta,sinal_StopLes_Baixa, sinal_StopLes_Alta,sinal_StopLes_Baixa : booleano;
 cor: inteiro;
+
 
 ///VARIAVEIS DA ESTRATÉGIA
 maxDA, minDA, vlrFiboC, vlrFiboV, vlrStopC, vlrStopV: real;
@@ -18,7 +18,7 @@ INICIO
 
 //PASSO 01 | CARREGAR INDICADOR
 maxDA := PriorCote(2);
-maxDA := PriorCote(3);
+minDA := PriorCote(3);
 vlrFiboC := minDA + ((maxDA-minDA)*(PercentualFiboC/100));
 vlrFiboV := maxDA - ((maxDA-minDA)*(PercentualFiboV/100));
 

@@ -1,0 +1,87 @@
+//https://www.youtube.com/watch?v=zmS9drqxMUw
+
+PARAMETRO
+PercentualFiboC(95);
+PercentualFiboV(95);
+SaidaC(1640);
+SaidaV(1640);
+
+
+VAR
+sinalC, sinalV, stopC, stopV: booleano;
+cor: inteiro;
+
+///VARIAVEIS DA ESTRATÉGIA
+maxDA, minDA, vlrFiboC, vlrFiboV, vlrStopC, vlrStopV: real;
+
+INICIO
+
+//PASSO 01 | CARREGAR INDICADOR
+maxDA := PriorCote(2);
+minDA := PriorCote(3);
+vlrFiboC := minDA + ((maxDA-minDA)*(PercentualFiboC/100));
+vlrFiboV := maxDA - ((maxDA-minDA)*(PercentualFiboV/100));
+
+//PASSO 02 | SINAIS DE ENTRADA
+sinalC := (minima < minDA) e (maxima > minDA) e (maxima < vlrFiboC) e (time < saidaC);
+sinalV := (minima < maxDA) e (maxima > maxDA) e (minima > vlrFiboV) e (time < siadaV);
+
+//EXECUÇÃO DE ENTRADA
+se (sinalC) e (not HasPosition) entao BuyStop((maxima+MinPriceIncrement), (maxima+MinPriceIncrement)+(20*MinPriceIncrement));
+senao se (sinalV) e (not HasPosition) entao SellShortStop((minima-MinPriceIncrement), (minima-MinPriceIncrement)-(20*MinPriceIncrement));
+
+//OCO
+//IsBought -> está comprado
+//BuyToCoverLimit -> estou vendido
+//IsSold -> estou vendido
+//BuyPrice -> volor que está comprado
+//SellPrice -> estou vendido
+// se estive comprado tem que usar SellToCoverLimit
+//DE COMPRA
+se (IsBought) entao
+  inicio
+    //vlrSopC := (BuyPrice -0.2(vlrFiboC - BuyPrice));
+    vlrStopC := (BuyPrice -abs(vlrFiboC - BuyPrice));
+    SellToCoverLimit(vlrFiboC);
+    SellToCoverStop(vlrStopC, vlrStopC-(20*MinPriceIncrement));
+    se (fechamento > vlrFiboC) ou (fechamento < vlrStopC) entao ClosePosition;
+    
+  fim
+//DE VENDA
+//IsSold -> estou vendido
+senao se (IsSold) entao
+  inicio
+    //vlrSopC := (BuyPrice -0.2(vlrFiboC - BuyPrice));
+    vlrStopV := (SellPrice + abs(SellPrice - vlrFiboV));
+    BuyToCoverLimit(vlrFiboV);
+    BuyToCoverStop(vlrStopV, vlrStopV+(20*MinPriceIncrement));
+    se (fechamento < vlrFiboV) ou (fechamento > vlrStopV) entao ClosePosition;
+    
+  fim;
+//SAIDA PRO HOÁRIO
+se (HasPosition) e (time >= saidaC) entao ClosePosition;
+
+//COLORAÇÃO
+se sinalC entao PaintBar(cllime)
+senao se sinalV entao PaintBar(clred); 
+
+//PROTAGEM
+plot(maxDA);
+setPlotColor(1, clyellow);
+plot2(minDA);
+SetPlotColor(2,clblue);
+
+se (ContadorDeCandle -1) entao
+  inicio 
+    noplot(1);
+    noplot(2);
+fim;
+
+
+plot5(vlrFiboC);
+SetPlotColor(5, cllime);
+
+plot6(vlrFiboV);
+SetPlotColor(6, clred);
+
+FIM;
