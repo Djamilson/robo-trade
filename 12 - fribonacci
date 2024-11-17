@@ -1,63 +1,89 @@
 ///https://www.youtube.com/watch?v=73L6WUkUyTY&list=PL2WuTAEJyHZOo1zlUCO3tpGN9SRCoCUPp&index=15
 
-input
+////////////////////////////////////////////
+// Robô Fibonacci com Gerenciamento de Risco
+////////////////////////////////////////////
 
-Zero(109170);
-Cem(108690)
+Input
+  Zero(109170),
+  Cem(108690),
+  %Risk(1),            // Percentual de risco por operação
+  StopLossPoints(100), // Stop Loss em pontos
+  TakeProfitPoints(150); // Take Profit em pontos
 
 var
-MeiaUm, TrintaeOito: Float; //Cem, Zero
+  MeiaUm, TrintaeOito, Cinquenta: Float;
+  LotSize: Float;  // Tamanho da posição
+  Capital: Float;  // Capital disponível
+  RiskPerTrade: Float;
 
 begin
+  //////////////////////////////////////////////
+  // Calcular Níveis de Fibonacci
+  //////////////////////////////////////////////
+  // Gap de Baixa
+  Se (OpenD[0] < CloseD[1]) então
+    Inicio
+      Zero := CloseD[1];
+      Cem := OpenD[0];
 
-//Gap de abaixa
-
-Se (OpenD(0) < closeD[1] entao)   
-  Inicio 
-    Zero := closeD(1);
-    Cem := OpenD(0);
-
-    TrintaeOito :=  zero - (zero - cem) * 0.618;
-    Cinquenta :=  zero - (zero - cem) * 0.50;
-    MeiaUm :=  zero - (zero - cem) * 0.382;
-  Fim;
-
-  //Gap de Alta
-  se  (OpenD[0] > CloseD(1)) entao
-    Inicio 
-      Zero := OpenD(0);
-      Cem := CloseD(1);
-
-      TrintaeOito :=  zero - (zero - cem) * 0.382;
-      cinquenta :=  zero - (zero - cem) * 0.50;
-      MeiaUm :=  zero - (zero - cem) * 0.618;
+      TrintaeOito := Cem + (Zero - Cem) * 0.382;
+      Cinquenta := Cem + (Zero - Cem) * 0.50;
+      MeiaUm := Cem + (Zero - Cem) * 0.618;
     Fim;
 
-    se (HasPosition = false) entao
-    //muda os valores aqui
-      Inicio 
-        Se (Fechamento > Cinquenta) entao 
-          BuyLimit(Cinquenta);
-        
-        se (Fechamento < Cinquenta) entao
-          SellShortLimit(Cinquenta);
-      Fim;
+  // Gap de Alta
+  se (OpenD[0] > CloseD[1]) então
+    Inicio
+      Zero := OpenD[0];
+      Cem := CloseD[1];
 
-    Se(Time > 900) entao
-      Inicio
-        Plot(Cem);
-        SetPlotColor(1, clFucsia);
-        Plot2(Zero);
-        SetPlotColor(2,ClWhite);
-
-        Plot3(Cinquenta);
-        SetPlotColor(3,ClRed);
-
-        Plot4(TrintaeOito);
-        SetPlotColor(4,ClBlue);
-
-        Plot5(MeiaUm);
-        SetPlotColor(5,ClLime);
+      TrintaeOito := Cem + (Zero - Cem) * 0.618;
+      Cinquenta := Cem + (Zero - Cem) * 0.50;
+      MeiaUm := Cem + (Zero - Cem) * 0.382;
     Fim;
 
-Fim;
+  //////////////////////////////////////////////
+  // Gerenciamento de Risco
+  //////////////////////////////////////////////
+  Capital := 100000; // Exemplo: R$100.000 de capital
+  RiskPerTrade := Capital * (%Risk / 100);
+  LotSize := RiskPerTrade / StopLossPoints;
+
+  //////////////////////////////////////////////
+  // Execução de Ordens
+  //////////////////////////////////////////////
+  se (HasPosition = False) então
+    Inicio
+      // Comprar se fechar acima do nível de 50%
+      Se (Close > Cinquenta) então
+        BuyLimit(Cinquenta, LotSize);
+
+      // Vender se fechar abaixo do nível de 50%
+      Se (Close < Cinquenta) então
+        SellShortLimit(Cinquenta, LotSize);
+    Fim;
+
+  // Controle de Stop Loss e Take Profit
+  se IsBought então
+    Inicio
+      se (Close < EntryPrice - StopLossPoints) então ClosePosition; // Stop Loss
+      se (Close > EntryPrice + TakeProfitPoints) então ClosePosition; // Take Profit
+    Fim;
+
+  se IsSold então
+    Inicio
+      se (Close > EntryPrice + StopLossPoints) então ClosePosition; // Stop Loss
+      se (Close < EntryPrice - TakeProfitPoints) então ClosePosition; // Take Profit
+    Fim;
+
+  //////////////////////////////////////////////
+  // Plotagem de Níveis
+  //////////////////////////////////////////////
+  Plot(Cem, "100%", clFuchsia);
+  Plot2(Zero, "0%", clWhite);
+  Plot3(Cinquenta, "50%", clRed);
+  Plot4(TrintaeOito, "38.2%", clBlue);
+  Plot5(MeiaUm, "61.8%", clLime);
+
+end;
