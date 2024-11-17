@@ -1,27 +1,52 @@
-input
-MediaRef(200);
-MacdLonga(26);
-MacdCurta(12);
-MacdSinal(9);
+//////////////////////////////////////////
+// Robô - Estratégia de Média e MACD
+//////////////////////////////////////////
+
+Input
+  MediaRef(200);                  // Período da média de referência
+  MacdLonga(26);                  // Período da média longa do MACD
+  MacdCurta(12);                  // Período da média curta do MACD
+  MacdSinal(9);                   // Período da linha de sinal do MACD
 
 var
-mRef, xMacd, mSinal: Float;
-Sinalc, SinalV : Boolean;
+  mRef, xMacd, mSinal: Float;     // Variáveis para a média e o MACD
+  sinalC, sinalV: Boolean;        // Sinais de compra e venda
 
 begin
-  mRef := Media(MediaRef, close);
-  xMacd := Macd(MacdLonga, MacdCurta, MacdSinal)|0|;
-  mSinal := MediaExp(MacdSinal, xMacd);
+  //////////////////////////////////////////
+  // Cálculo de Indicadores
+  //////////////////////////////////////////
+  mRef := Media(MediaRef, close);                // Média de referência
+  xMacd := Macd(MacdLonga, MacdCurta, MacdSinal); // Valor do MACD
+  mSinal := MediaExp(MacdSinal, xMacd);          // Média exponencial (linha de sinal do MACD)
 
-  SinalC := (ADX(9,9) > 25) e ((xMacd[1] < mSinal[1]) e (xMacd[0] > mSinal[0])) e (close > mRef) e (close > Open) e (xMacd < 0);
-  SinalV := (ADX(9,9) > 25) e ((xMacd[1] > mSinal[1]) e (xMacd[0] < mSinal[0])) e (close < mRef) e (close < Open) e (xMacd < 0);
+  //////////////////////////////////////////
+  // Sinais de Compra e Venda
+  //////////////////////////////////////////
+  sinalC := 
+    (ADX(9, 9) > 25) and                          // Tendência forte
+    (xMacd[1] < mSinal[1]) and (xMacd[0] > mSinal[0]) and // Cruzamento do MACD para cima
+    (close > mRef) and (close > open) and         // Preço acima da média e fechamento acima da abertura
+    (xMacd < 0);                                  // MACD negativo (indicador de correção)
 
-  se sinalC entao PaintBar(clLime);
-  se sinalV entao PaintBar(255);
+  sinalV := 
+    (ADX(9, 9) > 25) and                          // Tendência forte
+    (xMacd[1] > mSinal[1]) and (xMacd[0] < mSinal[0]) and // Cruzamento do MACD para baixo
+    (close < mRef) and (close < open) and         // Preço abaixo da média e fechamento abaixo da abertura
+    (xMacd < 0);                                  // MACD negativo (indicador de correção)
 
-  se (HasPosition = False)  entao
+  //////////////////////////////////////////
+  // Coloração das Barras
+  //////////////////////////////////////////
+  se sinalC entao PaintBar(clLime);              // Barra verde para compra
+  se sinalV entao PaintBar(clRed);               // Barra vermelha para venda
+
+  //////////////////////////////////////////
+  // Execução de Ordens
+  //////////////////////////////////////////
+  se (HasPosition = False) entao                 // Apenas quando não há posição aberta
     Inicio
-      se SinalC entao  BuyAtMarket;
-      se SinalV entao  SellShortAtMarket;
-    fim;
+      se sinalC entao BuyAtMarket;               // Compra a mercado
+      se sinalV entao SellShortAtMarket;         // Venda a mercado
+    Fim;
 end;
