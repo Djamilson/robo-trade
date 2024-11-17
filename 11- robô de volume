@@ -1,44 +1,97 @@
-input
+//////////////////////////////////////////
+// Robô Volume Direcional Avançado
+//////////////////////////////////////////
 
-VolumeDirecional(5);
+Input
+  VolumeDirecional(5),
+  FiltroADX(25),    // Mínimo ADX para confirmar tendência
+  MaxLoss(100),     // Perda máxima por operação
+  TakeProfit(150),  // Objetivo de lucro
+  StopLoss(50);     // Limite de perda
 
 var
-VD, VP, VN: Float;
-SinalC, SinalV: Boolean;
+  VD, VP, VN: Float;      // Variáveis de Volume Positivo e Negativo
+  SinalC, SinalV: Boolean; // Sinais de Compra e Venda
+  ADXValor: Float;        // Valor do ADX para filtro de tendência
+  EntryPrice: Float;      // Preço de entrada para cálculo de perdas/ganhos
 
 begin
 
-//INICIALIZA VARIAVEL
-VD:= VolumeDirecional*1000000000;
-    
-    Se (Clone > Open) então
-      Inicio 
-        VP :=VP[1]+Volume;
-        VN := 0;
-      fim;
-    
-    se (Clone < open) entao
-      Inicio
-        VN := VN[1]+Volume;
-        VP := 0;
-      fim;
+  //////////////////////////////////////////
+  // Inicialização e Cálculo de Volume
+  //////////////////////////////////////////
+  VD := VolumeDirecional * 1000000000;
+  
+  // Atualiza volumes positivos (VP) e negativos (VN)
+  se (Close > Open) entao
+    Inicio
+      VP := VP[1] + Volume;
+      VN := 0;
+    Fim
+  senão
+    Inicio
+      VN := VN[1] + Volume;
+      VP := 0;
+    Fim;
 
-    sinalC := (VN[1] > VD) e (Close[0] > Open[0]);
-    SinalV := (VN[1] > VD) e (Close[0] < Open[0]);
+  // Filtra tendências com ADX
+  ADXValor := ADX(14, 14);
 
-    //regra de coloração
+  //////////////////////////////////////////
+  // Sinais de Compra e Venda
+  //////////////////////////////////////////
+  SinalC := (VP > VD) e (ADXValor > FiltroADX) e (Close > Open);
+  SinalV := (VN > VD) e (ADXValor > FiltroADX) e (Close < Open);
 
-    se SinalC entao PaintBar(clLime);
-    se SinalV entao PaintBar(255);
+  //////////////////////////////////////////
+  // Regras de Coloração
+  //////////////////////////////////////////
+  se SinalC entao PaintBar(clLime);  // Verde para compra
+  se SinalV entao PaintBar(255);    // Vermelho para venda
 
+  //////////////////////////////////////////
+  // Execução de Ordens
+  //////////////////////////////////////////
+  se (HasPosition = False) entao
+    Inicio
+      se SinalC entao
+        Inicio
+          BuyAtMarket;
+          EntryPrice := Close;
+        Fim;
 
-    se HasPosition = false entao
-      Inicio  
-        se sinalC entao BuyAtMarket;
-        se SinalV entao SellShortAtMarket;
-      fim
-      
-    Plot(VP);
-    Plot2(VN);
+      se SinalV entao
+        Inicio
+          SellShortAtMarket;
+          EntryPrice := Close;
+        Fim;
+    Fim;
 
-Fim;
+  //////////////////////////////////////////
+  // Controle de Stop Loss e Take Profit
+  //////////////////////////////////////////
+  se IsBought entao
+    Inicio
+      // Stop Loss
+      se (Close < EntryPrice - StopLoss) entao ClosePosition;
+
+      // Take Profit
+      se (Close > EntryPrice + TakeProfit) entao ClosePosition;
+    Fim;
+
+  se IsSold entao
+    Inicio
+      // Stop Loss
+      se (Close > EntryPrice + StopLoss) entao ClosePosition;
+
+      // Take Profit
+      se (Close < EntryPrice - TakeProfit) entao ClosePosition;
+    Fim;
+
+  //////////////////////////////////////////
+  // Plotagem de Volumes
+  //////////////////////////////////////////
+  Plot(VP, "Volume Positivo", clGreen);
+  Plot2(VN, "Volume Negativo", clRed);
+
+end;
