@@ -1,74 +1,69 @@
 //https://www.youtube.com/watch?v=s6DOsvv6xr8&t=901s
-Parametro
-AmpAlvo(1.618);
-RiscoPorOperacao(0.01); // Gerenciamento de risco: porcentagem do capital a arriscar por operação
-CapitalInicial(100000); // Capital total para cálculo do risco
+// Configuração das variáveis
+inputs:
+    media_curta(9), 
+    media_longa(21), 
+    risco_por_operacao(0.01), 
+    alvo_risco(1.5);
 
-Var
-  SinalC, SinalV: Boolean;
-  AlvoC, AlvoV, StopC, StopV, xVwap: Float;
-  Lote: Integer; // Tamanho da posição com base no risco
-  RiscoPorPonto: Float; // Cálculo do risco em pontos para definir o tamanho da posição
+vars:
+    MediaC(0), 
+    MediaL(0), 
+    ATR(0), 
+    stop_c(0), 
+    stop_v(0), 
+    preco_entrada(0), 
+    posicao(0), 
+    perda_dia(0),
+    dia_atual(0);
 
-Begin
+// Cálculo de indicadores
+MediaC = Average(Close, media_curta);
+MediaL = Average(Close, media_longa);
+ATR = AvgTrueRange(14);
 
-  // PASSO 1 | RECEBER O VALOR DO INDICADOR
-  // xVwap := Vwap(1);
-  // xVwap := Media(20, Close);
-  // xVwap := Media(9, Close);
-  xVwap := MediaExp(20, Close);
+// Resetar perdas acumuladas no início do dia
+if Date > dia_atual then begin
+    perda_dia = 0;
+    dia_atual = Date;
+end;
 
-  // PASSO 2 | SINAIS DE ENTRADA
-  SinalC := ((Close[1] < Open[1]) e (Close[1] <= xVwap[1]) e (High[1] >= xVwap[1])) e
-            ((Close > Open) e (Close > High[1]) e (Low < Low[1]));
-  SinalV := ((Close[1] > Open[1]) e (Close[1] >= xVwap[1]) e (Low[1] <= xVwap[1])) e
-            ((Close < Open) e (Close < Low[1]) e (High > High[1]));
+// Gerenciamento de risco: parar operações se perda diária >= 1% do capital
+if perda_dia >= 0.01 * AccountSize then
+    return;
 
-  // PASSO 3 | GERENCIAMENTO DE RISCO
-  AlvoC := (Close - (Low - MinPriceIncrement));
-  AlvoV := Abs(Close - (High + MinPriceIncrement));
-  StopC := (Low - MinPriceIncrement);
-  StopV := (High + MinPriceIncrement);
+// Estratégia de entrada
+if posicao = 0 then begin
+    if MediaC > MediaL and Low > Low[1] and Close > Close[1] then begin
+        preco_entrada = High + 5;
+        stop_c = Low - ATR;
+        posicao = 1; // Compra
+        Buy ("EntradaCompra") next bar at preco_entrada stop;
+    end
+    else if MediaC < MediaL and High < High[1] and Close < Close[1] then begin
+        preco_entrada = Low - 5;
+        stop_v = High + ATR;
+        posicao = -1; // Venda
+        SellShort ("EntradaVenda") next bar at preco_entrada stop;
+    end;
+end;
 
-  // Risco por ponto definido como a diferença entre entrada e stop
-  RiscoPorPonto := Max(Abs(Close - StopC), Abs(Close - StopV));
+// Gerenciar saídas (compra)
+if posicao = 1 then begin
+    // Alvo e Stop
+    Sell ("SaidaLucro") next bar at (preco_entrada + (preco_entrada - stop_c) * alvo_risco) limit;
+    Sell ("SaidaStop") next bar at stop_c stop;
+end;
 
-  // Tamanho do lote com base no risco
-  Se RiscoPorPonto > 0 então
-    Lote := Trunc((CapitalInicial * RiscoPorOperacao) / RiscoPorPonto)
-  Senão
-    Lote := 1; // Valor mínimo para evitar erros em caso de divisão por zero
+// Gerenciar saídas (venda)
+if posicao = -1 then begin
+    // Alvo e Stop
+    BuyToCover ("SaidaLucro") next bar at (preco_entrada - (stop_v - preco_entrada) * alvo_risco) limit;
+    BuyToCover ("SaidaStop") next bar at stop_v stop;
+end;
 
-  // PASSO 4 | EXECUÇÃO DE ENTRADA
-  Se (SinalC e not HasPosition) então
-  Begin
-    BuyAtMarket(Lote);
-    PaintBar(clLime);
-  End;
-  Se (SinalV e not HasPosition) então
-  Begin
-    SellShortAtMarket(Lote);
-    PaintBar(255);
-  End;
-
-  // PASSO 5 | EXECUÇÃO DE SAÍDA
-  Se IsBought então
-  Begin
-    SellToCoverLimit(BuyPrice + AlvoC * AmpAlvo, Lote);
-    SellToCoverStop(StopC, StopC - 500, Lote);
-  End;
-
-  Se IsSold então
-  Begin
-    BuyToCoverLimit(SellPrice - AlvoV * AmpAlvo, Lote);
-    BuyToCoverStop(StopV, StopV + 500, Lote);
-  End;
-
-  // PASSO 6 | GERENCIAMENTO DE REVERSÃO
-  Se (not HasPosition) então
-  Begin
-    Se SinalC então BuyAtMarket(Lote);
-    Se SinalV então SellShortAtMarket(Lote);
-  End;
-
-End;
+// Atualizar perdas diárias
+if MarketPosition = 0 then begin
+    if LastTradeProfit < 0 then
+        perda_dia = perda_dia + absvalue(LastTradeProfit);
+end;
