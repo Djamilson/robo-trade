@@ -1,87 +1,90 @@
 //https://www.youtube.com/watch?v=zmS9drqxMUw
 
-PARAMETRO
-PercentualFiboC(95);
-PercentualFiboV(95);
-SaidaC(1640);
-SaidaV(1640);
+////////////////////////////////////////////
+// Robô Fibonacci com Gerenciamento de Risco
+////////////////////////////////////////////
 
-VAR
-sinal_Venda_Alta,sinal_Venda_Baixa, sinal_Compra_Alta,sinal_Compra_Baixa, sinal_StopLes_Alta,sinal_StopLes_Baixa, sinal_StopLes_Alta,sinal_StopLes_Baixa : booleano;
-cor: inteiro;
+Input
+  PercentualFiboC(95),        // Percentual de Fibonacci para compra
+  PercentualFiboV(95),        // Percentual de Fibonacci para venda
+  SaidaC(1640),               // Horário limite para operações de compra
+  SaidaV(1640),               // Horário limite para operações de venda
+  %Risco(1);                  // Percentual de risco por operação
 
+Var
+  sinalC, sinalV: Boolean;
+  maxDA, minDA, vlrFiboC, vlrFiboV, vlrStopC, vlrStopV: Real;
+  Capital, RiscoMaximo, LotSize: Real;
 
-///VARIAVEIS DA ESTRATÉGIA
-maxDA, minDA, vlrFiboC, vlrFiboV, vlrStopC, vlrStopV: real;
+Begin
 
-INICIO
+  ////////////////////////////////////////
+  // PASSO 01 | CARREGAR INDICADORES
+  ////////////////////////////////////////
+  maxDA := PriorCote(2);  // Máxima do dia anterior
+  minDA := PriorCote(3);  // Mínima do dia anterior
+  vlrFiboC := minDA + ((maxDA - minDA) * (PercentualFiboC / 100));
+  vlrFiboV := maxDA - ((maxDA - minDA) * (PercentualFiboV / 100));
 
-//PASSO 01 | CARREGAR INDICADOR
-maxDA := PriorCote(2);
-minDA := PriorCote(3);
-vlrFiboC := minDA + ((maxDA-minDA)*(PercentualFiboC/100));
-vlrFiboV := maxDA - ((maxDA-minDA)*(PercentualFiboV/100));
+  ////////////////////////////////////////
+  // PASSO 02 | GERENCIAMENTO DE RISCO
+  ////////////////////////////////////////
+  Capital := 100000; // Exemplo de capital total disponível
+  RiscoMaximo := Capital * (%Risco / 100);
+  LotSize := RiscoMaximo / abs(maxDA - minDA); // Tamanho da posição com base no risco
 
-//PASSO 02 | SINAIS DE ENTRADA
-sinalC := (minima < minDA) e (maxima > minDA) e (maxima < vlrFiboC) e (time < saidaC);
-sinalV := (minima < maxDA) e (maxima > maxDA) e (minima > vlrFiboV) e (time < siadaV);
+  ////////////////////////////////////////
+  // PASSO 03 | SINAIS DE ENTRADA
+  ////////////////////////////////////////
+  sinalC := (minima < minDA) and (maxima > minDA) and (maxima < vlrFiboC) and (time < SaidaC);
+  sinalV := (minima < maxDA) and (maxima > maxDA) and (minima > vlrFiboV) and (time < SaidaV);
 
-//EXECUÇÃO DE ENTRADA
-se (sinalC) e (not HasPosition) entao BuyStop((maxima+MinPriceIncrement), (maxima+MinPriceIncrement)+(20*MinPriceIncrement));
-senao se (sinalV) e (not HasPosition) entao SellShortStop((minima-MinPriceIncrement), (minima-MinPriceIncrement)-(20*MinPriceIncrement));
+  ////////////////////////////////////////
+  // EXECUÇÃO DE ORDENS
+  ////////////////////////////////////////
+  If (sinalC) and (not HasPosition) Then
+    BuyStop((maxima + MinPriceIncrement), LotSize);
 
-//OCO
-//IsBought -> está comprado
-//BuyToCoverLimit -> estou vendido
-//IsSold -> estou vendido
-//BuyPrice -> volor que está comprado
-//SellPrice -> estou vendido
-// se estive comprado tem que usar SellToCoverLimit
-//DE COMPRA
-se (IsBought) entao
-  inicio
-    //vlrSopC := (BuyPrice -0.2(vlrFiboC - BuyPrice));
-    vlrStopC := (BuyPrice -abs(vlrFiboC - BuyPrice));
+  If (sinalV) and (not HasPosition) Then
+    SellShortStop((minima - MinPriceIncrement), LotSize);
+
+  ////////////////////////////////////////
+  // GERENCIAMENTO DE POSIÇÕES
+  ////////////////////////////////////////
+  If (IsBought) Then
+  Begin
+    vlrStopC := BuyPrice - abs(vlrFiboC - BuyPrice);
     SellToCoverLimit(vlrFiboC);
-    SellToCoverStop(vlrStopC, vlrStopC-(20*MinPriceIncrement));
-    se (fechamento > vlrFiboC) ou (fechamento < vlrStopC) entao ClosePosition;
-    
-  fim
-//DE VENDA
-//IsSold -> estou vendido
-senao se (IsSold) entao
-  inicio
-    //vlrSopC := (BuyPrice -0.2(vlrFiboC - BuyPrice));
-    vlrStopV := (SellPrice + abs(SellPrice - vlrFiboV));
+    SellToCoverStop(vlrStopC, vlrStopC - (20 * MinPriceIncrement));
+
+    If (fechamento > vlrFiboC) or (fechamento < vlrStopC) Then
+      ClosePosition;
+  End
+  Else If (IsSold) Then
+  Begin
+    vlrStopV := SellPrice + abs(SellPrice - vlrFiboV);
     BuyToCoverLimit(vlrFiboV);
-    BuyToCoverStop(vlrStopV, vlrStopV+(20*MinPriceIncrement));
-    se (fechamento < vlrFiboV) ou (fechamento > vlrStopV) entao ClosePosition;
-    
-  fim;
-//SAIDA PRO HOÁRIO
-se (HasPosition) e (time >= saidaC) entao ClosePosition;
+    BuyToCoverStop(vlrStopV, vlrStopV + (20 * MinPriceIncrement));
 
-//COLORAÇÃO
-se sinalC entao PaintBar(cllime)
-senao se sinalV entao PaintBar(clred); 
+    If (fechamento < vlrFiboV) or (fechamento > vlrStopV) Then
+      ClosePosition;
+  End;
 
-//PROTAGEM
-plot(maxDA);
-setPlotColor(1, clyellow);
-plot2(minDA);
-SetPlotColor(2,clblue);
+  ////////////////////////////////////////
+  // ENCERRAMENTO AUTOMÁTICO
+  ////////////////////////////////////////
+  If (HasPosition) and (time >= SaidaC) Then
+    ClosePosition;
 
-se (ContadorDeCandle -1) entao
-  inicio 
-    noplot(1);
-    noplot(2);
-fim;
+  ////////////////////////////////////////
+  // COLORAÇÃO E PLOTAGEM
+  ////////////////////////////////////////
+  If sinalC Then PaintBar(clLime)
+  Else If sinalV Then PaintBar(clRed);
 
+  Plot(maxDA, "Máxima Anterior", clYellow);
+  Plot2(minDA, "Mínima Anterior", clBlue);
+  Plot5(vlrFiboC, "Fibo Compra", clLime);
+  Plot6(vlrFiboV, "Fibo Venda", clRed);
 
-plot5(vlrFiboC);
-SetPlotColor(5, cllime);
-
-plot6(vlrFiboV);
-SetPlotColor(6, clred);
-
-FIM;
+End;
