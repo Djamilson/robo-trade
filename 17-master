@@ -1,164 +1,105 @@
 //https://www.youtube.com/watch?v=zTvx4bv-K60
 //https://www.youtube.com/watch?v=NimGTX1QEe0
 
-PARAMETRO
-  NivelC(25);
-  NivelV(16)
+//===========================================
+// ROBÔ UNIFICADO: ESTRATÉGIAS COM GERENCIAMENTO DE RISCO
+//===========================================
 
-Var
-sinalC, sinalV, stopC,stopV: booleano;
-  bf: real;
-
-Inicio
-
-//PASSO 1 | RECEBER O VALOR  do indicador
-bF := NelogicaBollomFinder|1|;
-
-//PASSO 2 | SINAIS DE ENTRADA
-sinalC := (bF[1] >= NivelC) e (bF[0] < NivelC) e (fechamento > abertura) e (volume > 0);
-sinalV := (bF[1] <= -NivelV) e (bF[0] > -NivelV) e (fechamento < abertura) e (volume > 0);
-
-//PASSO 3 | SINAIS  DE SAÍDA
-stopC  := (bF >= NivelC);
-stopV := (bF <= -NivelV);
-
-//PASSO 4 | EXECUÇÃO DE ENTRADA
-se (not HasPosition) e sinalC entao BuyAtMarket
-senao se (not  HasPosition) e sinalV entao SellShortAtMarket;
-
-
-//PASSO 5 | EXECUÇÃO DE SAIDA
-se (Isbought) e (stopC) entao SellToCoverAtMarket
-senao se (IsSold) e (stopV) entao BuyToCoverAtMarket;
-
-
-//PASSO 6 | EXECUÇÃO REVERSAO
-se (IsBought) e (sinalV) entao ReversePosition //closePosition
-senao se (IsSold) e (sinalC) entao ReversePosition; //closePosition
-
-
-//PASSO EXTRA 1 | COLORAÇÃO
-se sinalC entao PaintBar(clverdelimao)
-senao se sinalV entao PaintBar(clvermelho);
-
-//PLOTAGEM EXTR | PLOTAGEM
-plotn(1,bf);
-SetPlotType(1,1);
-plotn(2, NivelC);
-plotn(3,-NivelV);
-
-
-Fim;
-
-
-///projeto 02 para unir as regras dos dois projetos
-INput
-PeriodoMedia(9);
-Tipo(0);
-Desvio(2.00);
-Periodo(20);
-
-Var
-  sinalC, SinalV : Boolean;
-  sAtr, m : Float;
-
-begin
-  m := MediaExp(PeriodoMedia, Close);
-  sAtr := StopAtr(Desvio, Periodo, Tipo)|1|;
-
-  //PEGAR O SINAL
-  SinalC := (m[0] > m[1]) e (m[1] < m[2]) e (m[2] > m[3]) e (m[3] > m[4]) e (m[4] > m[5]) e (m[5] > m[6]) e (Low[0]>= Low[1]);
-  SinalV := (m[0] < m[1]) e (m[1] > m[2]) e (m[2] < m[3]) e (m[3] < m[4]) e (m[4] < m[5]) e (m[5] < m[6]) e (high[0]<= high[1]);
-
-
-  se sinalC entao PaintBar(cllime);
-  se SinalV entao PaintBar(255);
-
-  //Isbought => se estou comprado
-  //IsSold => se estou vendido
-        //e (close < m)
-  se Isbought e (sAtr=1) entao ClosePosition;
-  se IsSold e (sAtr=0) entao ClosePosition;
-
-  se HasPosition = false entao
-
-    Inicio
-    //se sAtr 1 porque esta vermelho em vendido
-    //se sAtr 0 porque está verde em comprado
-      se SinalC e (sAtr = 0) entao BuyStop(High+MinPriceIncrement, High+MinPriceIncrement + 50);
-      se SinalV e (sAtr = 1) entao SellShortStop(Low-MinPriceIncrement, Low-MinPriceIncrement - 50);
-    Fim;
-end;
-
-//=========================================
-//=========================================
-//robo 3 para
-//https://www.youtube.com/watch?v=_qWWNndaEiA&t=689s
-
-Var
-  pbh: Float;
-  SinalC, SinalV : Boolean;
-
-Inicio
-  pbh := NelogicaPullBackFinder|1|;
-
-  sinalC := (pbh[1] < 0) e (pbh > 0);
-  sinalV := (pbh[1] > 0) e (pbh < 0);
-  
-  //APLICANDO A COLORAÇÃO
-  Se SinalV entao PaintBar(cllime);
-  se sinalV entao PaintBar(255); 
-Fim;
-///===================================
-//
 Input
-AlvoRico(1.00);
-ColoriInvesSinal(True);
+  NivelC(25),                // Nível para sinal de compra
+  NivelV(16),                // Nível para sinal de venda
+  AlvoRico(1.00),            // Risco/Retorno esperado
+  PercentualRisco(1.00),     // Percentual de risco por operação
+  ColorirInvesSinal(True);   // Ativar coloração para sinais
 
 Var
-  StopC, stopV, AlvoC, AlvoV, pbh: Float;
-  SinalC, SinalV : Boolean;
+  bf, pbh, m, sAtr, stopC, stopV, alvoC, alvoV: Real;
+  sinalC, sinalV: Boolean;
+  Capital, RiscoMaximo, LotSize: Real;
 
 Inicio
-  pbh := NelogicaPullBackFinder|1|;
 
-  se ColorirInvesSinal entao
-    Inicio
-    sinalC := (pbh[1] < 0) e (pbh > 0);
-    sinalV := (pbh[1] > 0) e (pbh < 0);  
-    Fim
-    senao
-      Inicio
-      sinalC := (pbh > 10);
-      sinalV := (pbh < -10);
-      
-      fim;
-  
-  //APLICANDO A COLORAÇÃO
-  Se SinalV entao PaintBar(cllime);
-  se sinalV entao PaintBar(255); 
+  ////////////////////////////////////////
+  // CONFIGURAÇÃO INICIAL
+  ////////////////////////////////////////
+  Capital := 100000; // Exemplo de capital disponível
+  RiscoMaximo := Capital * (PercentualRisco / 100); // Risco máximo permitido
+  LotSize := RiscoMaximo / (High - Low); // Cálculo do tamanho da posição
 
+  ////////////////////////////////////////
+  // PASSO 1 | INDICADORES E NÍVEIS
+  ////////////////////////////////////////
+  bf := NelogicaBollomFinder|1|;     // Indicador Bottom Finder
+  pbh := NelogicaPullBackFinder|1|; // Indicador Pullback Finder
+  m := MediaExp(9, Close);          // Média exponencial
+  sAtr := StopAtr(2.00, 20, 0)|1|;  // ATR para stops
 
-  Se  (IsBought) entao 
-      Inicio
-        SellToCoverLimit(BuyPrice+AlvoC*AlvoRico);
-        SellToCoverStop(StopC, stopC-500);
-      fim;
+  ////////////////////////////////////////
+  // PASSO 2 | DEFINIÇÃO DE SINAIS
+  ////////////////////////////////////////
+  // Estratégia de Bottom Finder
+  sinalC := (bf[1] >= NivelC) and (bf[0] < NivelC) and (fechamento > abertura) and (volume > 0);
+  sinalV := (bf[1] <= -NivelV) and (bf[0] > -NivelV) and (fechamento < abertura) and (volume > 0);
 
-    se (IsSold) entao
-      inicio
-        BuyToCoverLimit(SellPrice-AlvoV*AlvoRico);
-        BuyToCoverStop(SotpV, stopV+500);
-      fim;
+  // Estratégia de Pullback Finder
+  If ColorirInvesSinal Then
+  Begin
+    sinalC := sinalC or ((pbh[1] < 0) and (pbh > 0));
+    sinalV := sinalV or ((pbh[1] > 0) and (pbh < 0));
+  End
+  Else
+  Begin
+    sinalC := sinalC or (pbh > 10);
+    sinalV := sinalV or (pbh < -10);
+  End;
 
-    se (HasPosition = false) entao
-      inicio
-        AlvoC:= (close-Low-MinPriceIncrement);
-        AlvoV:= abs(close-High+MinPriceIncrement);
-        stopC:=Low;
-        stopV:=High;
+  ////////////////////////////////////////
+  // PASSO 3 | ENTRADA EM POSIÇÕES
+  ////////////////////////////////////////
+  If not HasPosition Then
+  Begin
+    If sinalC Then BuyStop(High + MinPriceIncrement, LotSize);
+    If sinalV Then SellShortStop(Low - MinPriceIncrement, LotSize);
+  End;
 
-        se SinalC entao BuyAtMarket;
-        se sinalV entao SellShortAtMarket;
-      fim;
+  ////////////////////////////////////////
+  // PASSO 4 | GERENCIAMENTO DE POSIÇÕES
+  ////////////////////////////////////////
+  If IsBought Then
+  Begin
+    alvoC := BuyPrice + AlvoRico * (High - Low); // Alvo com base no Risco/Retorno
+    stopC := Low; // Stop baseado na mínima
+    SellToCoverLimit(alvoC);
+    SellToCoverStop(stopC, stopC - (50 * MinPriceIncrement));
+
+    // Fechamento forçado por Sinal de Venda ou Stop
+    If sinalV or (bf >= NivelC) Then ClosePosition;
+  End;
+
+  If IsSold Then
+  Begin
+    alvoV := SellPrice - AlvoRico * (High - Low); // Alvo com base no Risco/Retorno
+    stopV := High; // Stop baseado na máxima
+    BuyToCoverLimit(alvoV);
+    BuyToCoverStop(stopV, stopV + (50 * MinPriceIncrement));
+
+    // Fechamento forçado por Sinal de Compra ou Stop
+    If sinalC or (bf <= -NivelV) Then ClosePosition;
+  End;
+
+  ////////////////////////////////////////
+  // PASSO 5 | COLORAÇÃO E PLOTAGEM
+  ////////////////////////////////////////
+  If sinalC Then PaintBar(clLime);
+  If sinalV Then PaintBar(clRed);
+
+  // Indicadores para análise
+  Plot(bf, "Bottom Finder", clYellow);
+  Plot2(pbh, "Pullback Finder", clBlue);
+  Plot3(m, "Média Exponencial", clGreen);
+
+  // Níveis de compra/venda
+  Plot4(NivelC, "Nível Compra", clLime);
+  Plot5(-NivelV, "Nível Venda", clRed);
+
 Fim;
