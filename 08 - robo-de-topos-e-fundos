@@ -1,58 +1,68 @@
-/////////////////////////////////////**//
-//robô 08 passaro magico
-//https://www.youtube.com/watch?v=RPP0DP0U08Q&t=18s
-/////////////////////////////////////**//
+//////////////////////////////////////////
+// Robô 08 - Pássaro Mágico
+// Estratégia baseada em rompimento e suporte/resistência
+//////////////////////////////////////////
 
-input
-Rompimento(true);
-SuporteResistencia(false);
-Periodo(10)
-Deslocamento(0);
+Input
+  Rompimento(true);                  // Ativar estratégia de rompimento
+  SuporteResistencia(false);         // Ativar estratégia de suporte/resistência
+  Periodo(10);                       // Período para cálculo de máximas e mínimas
+  Deslocamento(0);                   // Deslocamento dos cálculos
 
 var
-A, B, mMin, mMax : Float;
-Topo, Fundo, MediaL : Float;
-Return, validade : Inteiro;
+  A, B, mMin, mMax: Float;           // Variáveis auxiliares para máximas/mínimas
+  Topo, Fundo: Float;                // Níveis de suporte e resistência
+  Return, validade: Inteiro;         // Variáveis de controle
 
 begin
-A := highest(high, periodo)[deslocamento];
-B := lowest(low, periodo)[deslocamento];
+  //////////////////////////////////////////
+  // Cálculo das Máximas e Mínimas
+  //////////////////////////////////////////
+  A := highest(high, Periodo)[Deslocamento]; // Maior valor no período
+  B := lowest(low, Periodo)[Deslocamento];   // Menor valor no período
 
-se (Minima > Minima[1]) e (Minima[1] <= Minima[2] entao)
-  mMin := Minima[1];
+  // Identificar fundo
+  se (Minima > Minima[1]) e (Minima[1] <= Minima[2]) entao
+    mMin := Minima[1];
+    
+  se (B >= mMin) entao
+    Fundo := mMin;
 
-se (B >= mMin) entao (B < mMin)
-  Fundo := mMin;
+  // Identificar topo
+  se (Maxima < Maxima[1]) e (Maxima[1] >= Maxima[2]) entao
+    mMax := Maxima[1];
+    
+  se (A <= mMax) entao
+    Topo := mMax;
 
-Se (Maxima < Maxima[1]) e (Maxima[1] >= Maxima[2]) entao
-  mMax := Maxima[1]
+  //////////////////////////////////////////
+  // Plotar Suporte e Resistência
+  //////////////////////////////////////////
+  Plot(Topo);               // Plotar nível de resistência
+  SetPlotColor(1, cllime);  // Cor verde para resistência
+  Plot2(Fundo);             // Plotar nível de suporte
+  SetPlotColor(2, clred);   // Cor vermelha para suporte
 
-se (A <= mMax) entao
- top := mMax;
-
-
-Plot(Topo);
-  SetPlotColor(1,cllime);
-Plot2(Fundo);
-  SetPlotColor(2,255);
-
-
-  ///////////////// EXECUTA ORDEM/////////////
+  //////////////////////////////////////////
+  // Execução de Ordens - Estratégia de Rompimento
+  //////////////////////////////////////////
   se (Rompimento) e (SuporteResistencia = False) entao
     Inicio
-      se (High < Top) entao
-        BuyStop(Top, Topo+30);
-      se (Low > Fundo) entao
-        SellShortStop(Fundo, Fundo-30);
-    Fim
+      se (High > Topo) entao
+        BuyStop(Topo, Topo + 30);      // Compra no rompimento do topo
+      se (Low < Fundo) entao
+        SellShortStop(Fundo, Fundo - 30); // Venda no rompimento do fundo
+    Fim;
 
-
- se (Rompimento = false) e (SuporteResistencia) entao
+  //////////////////////////////////////////
+  // Execução de Ordens - Suporte e Resistência
+  //////////////////////////////////////////
+  se (Rompimento = false) e (SuporteResistencia) entao
     Inicio
-      se (High < Top) entao
-        SellShortLimit(Topo);
+      se (High < Topo) entao
+        SellShortLimit(Topo);          // Venda na resistência
       se (Low > Fundo) entao
-        BuyLimit(Fundo);
+        BuyLimit(Fundo);               // Compra no suporte
     Fim;
 
 end;
