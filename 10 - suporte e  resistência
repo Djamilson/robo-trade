@@ -1,127 +1,63 @@
-input
+//////////////////////////////////////////
+// Robô Multi-Níveis
+//////////////////////////////////////////
 
-Nivel_1(117685);
-Nivel_2(117040);
-Nivel_3(116760);
-Nivel_4(116615);
-Nivel_5(116310);
-Nivel_6(0);
-Nivel_7(0);
-Nivel_8(0);
-Nivel_9(0);
-Nivel_10(0);
-Nivel_11(0);
-Nivel_12(0);
-Nivel_13(0);
-Nivel_14(0);
+Input
+  Nivel_1(117685), Nivel_2(117040), Nivel_3(116760), Nivel_4(116615),
+  Nivel_5(116310), Nivel_6(0), Nivel_7(0), Nivel_8(0),
+  Nivel_9(0), Nivel_10(0), Nivel_11(0), Nivel_12(0),
+  Nivel_13(0), Nivel_14(0);
 
 var
+  Niveis: array[1..14] of Float;  // Array para armazenar os níveis
+  i: Inteiro;                     // Índice para laço
 
 begin
-   se (HasPosition = False) entao
-    Inicio 
-      Se (Low > Nivel_1) entao
-        BuyLimit(Nivel_1);
+  //////////////////////////////////////////
+  // Configuração dos Níveis
+  //////////////////////////////////////////
+  Niveis[1] := Nivel_1;
+  Niveis[2] := Nivel_2;
+  Niveis[3] := Nivel_3;
+  Niveis[4] := Nivel_4;
+  Niveis[5] := Nivel_5;
+  Niveis[6] := Nivel_6;
+  Niveis[7] := Nivel_7;
+  Niveis[8] := Nivel_8;
+  Niveis[9] := Nivel_9;
+  Niveis[10] := Nivel_10;
+  Niveis[11] := Nivel_11;
+  Niveis[12] := Nivel_12;
+  Niveis[13] := Nivel_13;
+  Niveis[14] := Nivel_14;
 
-      se (High < Nivel_1) e (Low > Nivel_2) entao 
+  //////////////////////////////////////////
+  // Execução de Ordens
+  //////////////////////////////////////////
+  se (HasPosition = False) entao
+    Inicio
+      para i := 1 ate 14 faca
         Inicio
-          SellShortLimit(Nivel_1);
-          BuyLimit(Nivel_2);
+          // Ignora níveis desativados (valor 0)
+          se (Niveis[i] = 0) entao Continue;
+
+          // Compra no nível atual
+          se (i = 1) ou ((High < Niveis[i-1]) e (Low > Niveis[i])) entao
+            BuyLimit(Niveis[i]);
+
+          // Venda no nível atual
+          se (High < Niveis[i]) e ((i = 14) ou (Low > Niveis[i+1])) entao
+            SellShortLimit(Niveis[i]);
         Fim;
-      
-      se (High < Nivel_2) e (Low > Nivel_3) entao 
-        Inicio
-          SellShortLimit(Nivel_2);
-          BuyLimit(Nivel_3);
-        Fim;
+    Fim;
 
-       se (High < Nivel_3) e (Low > Nivel_4) entao 
-        Inicio
-          SellShortLimit(Nivel_3);
-          BuyLimit(Nivel_4);
-        Fim;
+  //////////////////////////////////////////
+  // Plotagem dos Níveis
+  //////////////////////////////////////////
+  para i := 1 ate 14 faca
+    Inicio
+      se (Niveis[i] > 0) entao
+        Plot(Niveis[i], "Nível " + Texto(i));
+    Fim;
 
-
-       se (High < Nivel_4) e (Low > Nivel_5) entao 
-        Inicio
-          SellShortLimit(Nivel_4);
-          BuyLimit(Nivel_5);
-        Fim;
-
-        se (High < Nivel_5) e (Low > Nivel_6) entao 
-        Inicio
-          SellShortLimit(Nivel_5);
-          BuyLimit(Nivel_6);
-        Fim;
-
-se (High < Nivel_6) e (Low > Nivel_7) entao 
-        Inicio
-          SellShortLimit(Nivel_6);
-          BuyLimit(Nivel_7);
-        Fim;
-
-
-        se (High < Nivel_7) e (Low > Nivel_8) entao 
-        Inicio
-          SellShortLimit(Nivel_7);
-          BuyLimit(Nivel_8);
-        Fim;
-
-
-se (High < Nivel_8) e (Low > Nivel_9) entao 
-        Inicio
-          SellShortLimit(Nivel_8);
-          BuyLimit(Nivel_9);
-        Fim;
-
-        se (High < Nivel_9) e (Low > Nivel_10) entao 
-        Inicio
-          SellShortLimit(Nivel_9);
-          BuyLimit(Nivel_10);
-        Fim;
-
-        se (High < Nivel_10) e (Low > Nivel_11) entao 
-        Inicio
-          SellShortLimit(Nivel_10);
-          BuyLimit(Nivel_11);
-        Fim;
-
-        se (High < Nivel_11) e (Low > Nivel_12) entao 
-        Inicio
-          SellShortLimit(Nivel_11);
-          BuyLimit(Nivel_12);
-        Fim;
-
-        se (High < Nivel_12) e (Low > Nivel_13) entao 
-        Inicio
-          SellShortLimit(Nivel_12);
-          BuyLimit(Nivel_13);
-        Fim;
-
-        se (High < Nivel_13) e (Low > Nivel_14) entao 
-        Inicio
-          SellShortLimit(Nivel_13);
-          BuyLimit(Nivel_14);
-        Fim;
-
-          se (High < Nivel_14) entao 
-        Inicio
-          SellShortLimit(Nivel_14);         
-        Fim;
-
-        Plot(Nivel_1);
-        Plot2(Nivel_2);
-        Plot3(Nivel_3);
-        Plot4(Nivel_4);
-        Plot5(Nivel_5);
-        Plot6(Nivel_6);
-        Plot7(Nivel_7);
-        Plot8(Nivel_8);
-        Plot9(Nivel_9);
-        Plot10(Nivel_10);
-        Plot11(Nivel_11);
-        Plot12(Nivel_12);
-        Plot13(Nivel_13);
-        Plot14(Nivel_14);      
-
-Fim;
+end;
