@@ -11,6 +11,7 @@ Input
   SaidaV(1640),               // Horário limite para operações de venda
   %Risco(1);                  // Percentual de risco por operação
 
+
 Var
   sinalC, sinalV: Boolean;
   maxDA, minDA, vlrFiboC, vlrFiboV, vlrStopC, vlrStopV: Real;

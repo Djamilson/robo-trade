@@ -1,0 +1,74 @@
+Parametro
+AmpAlvo(1.618);
+RiscoPorOperacao(0.01); // Gerenciamento de risco: porcentagem do capital a arriscar por operação
+CapitalInicial(1000); // Capital total para cálculo do risco
+
+Var
+  SinalC, SinalV: Boolean;
+  AlvoC, AlvoV, StopC, StopV, xVwap: Float;
+  Lote: Integer; // Tamanho da posição com base no risco
+  RiscoPorPonto: Float; // Cálculo do risco em pontos para definir o tamanho da posição
+
+Begin
+
+  // PASSO 1 | RECEBER O VALOR DO INDICADOR
+  // xVwap := Vwap(1);
+  // xVwap := Media(20, Close);
+  // xVwap := Media(9, Close);
+  xVwap := MediaExp(20, Close);
+
+  // PASSO 2 | SINAIS DE ENTRADA
+  SinalC := ((Close[1] < Open[1]) e (Close[1] <= xVwap[1]) e (High[1] >= xVwap[1])) e
+            ((Close > Open) e (Close > High[1]) e (Low < Low[1]));
+  SinalV := ((Close[1] > Open[1]) e (Close[1] >= xVwap[1]) e (Low[1] <= xVwap[1])) e
+            ((Close < Open) e (Close < Low[1]) e (High > High[1]));
+
+  // PASSO 3 | GERENCIAMENTO DE RISCO
+  AlvoC := (Close - (Low - MinPriceIncrement));
+  AlvoV := Abs(Close - (High + MinPriceIncrement));
+  StopC := (Low - MinPriceIncrement);
+  StopV := (High + MinPriceIncrement);
+
+  // Risco por ponto definido como a diferença entre entrada e stop
+  RiscoPorPonto := Max(Abs(Close - StopC), Abs(Close - StopV));
+
+  // Tamanho do lote com base no risco
+  Se RiscoPorPonto > 0 então
+    Lote := Trunc((CapitalInicial * RiscoPorOperacao) / RiscoPorPonto)
+  Senão
+    Lote := 1; // Valor mínimo para evitar erros em caso de divisão por zero
+
+  // PASSO 4 | EXECUÇÃO DE ENTRADA
+  Se (SinalC e not HasPosition) então
+  Begin
+    BuyAtMarket(Lote);
+    PaintBar(clLime);
+  End;
+  Se (SinalV e not HasPosition) então
+  Begin
+    SellShortAtMarket(Lote);
+    PaintBar(255);
+  End;
+
+  // PASSO 5 | EXECUÇÃO DE SAÍDA
+  Se IsBought então
+  Begin
+    SellToCoverLimit(BuyPrice + AlvoC * AmpAlvo, Lote);
+    SellToCoverStop(StopC, StopC - 500, Lote);
+  End;
+
+  Se IsSold então
+  Begin
+    BuyToCoverLimit(SellPrice - AlvoV * AmpAlvo, Lote);
+    BuyToCoverStop(StopV, StopV + 500, Lote);
+  End;
+
+  // PASSO 6 | GERENCIAMENTO DE REVERSÃO
+  Se (not HasPosition) então
+  Begin
+    Se SinalC então BuyAtMarket(Lote);
+    Se SinalV então SellShortAtMarket(Lote);
+  End;
+
+End;
+
