@@ -1,6 +1,9 @@
 ///////////////////////////////////////////
 // Robô Fibonacci com Gerenciamento de Risco
 ///////////////////////////////////////////
+def registrar_operacao(data, simbolo, tipo_operacao, preco_entrada, preco_saida, quantidade, lucro, razao, parametros):
+    # ... (código para registrar a operação em um arquivo CSV ou banco de dados)
+
 
 Input
   PercentualFiboC(95),        // Percentual de Fibonacci para compra
@@ -14,6 +17,17 @@ Var
   maxDA, minDA, vlrFiboC, vlrFiboV, vlrStopC, vlrStopV: Real;
   Capital, RiscoMaximo, LotSize: Real;
 
+// Cálculo de indicadores
+MediaC = Average(Close, media_curta);
+MediaL = Average(Close, media_longa);
+ATR = AvgTrueRange(14);
+RSI := RSI(Close, 14);
+
+// Cálculo do stop loss baseado no ATR
+ATRMultiplier = 2  # Ajustar conforme necessário
+StopLoss = Close - (ATR * ATRMultiplier)
+//StopLoss = Max(Highest(High, 10), BuyPrice * StopLossFactor)
+
 Begin
 
   ////////////////////////////////////////
@@ -24,6 +38,13 @@ Begin
   vlrFiboC := minDA + ((maxDA - minDA) * (PercentualFiboC / 100));
   vlrFiboV := maxDA - ((maxDA - minDA) * (PercentualFiboV / 100));
 
+// Stop Loss Trailing
+StopLoss = Max(Highest(High, 10), BuyPrice * StopLossFactor);
+
+// Take Profit Trailing (Exemplo)
+TakeProfit = BuyPrice * 1.2; // Ajustar o fator 1.2 conforme necessário
+
+
   ////////////////////////////////////////
   // PASSO 02 | GERENCIAMENTO DE RISCO
   ////////////////////////////////////////
@@ -31,10 +52,13 @@ Begin
   RiscoMaximo := Capital * (%Risco / 100);
   LotSize := RiscoMaximo / abs(maxDA - minDA); // Tamanho da posição baseado no risco
 
+
+// Sinal de compra mais robusto
+
   ////////////////////////////////////////
   // PASSO 03 | SINAIS DE ENTRADA
   ////////////////////////////////////////
-  sinalC := (minima < minDA) and (maxima > minDA) and (maxima < vlrFiboC) and (time < SaidaC);
+  sinalC := (minima < minDA) and (maxima > minDA) and (maxima < vlrFiboC) and (time < SaidaC) and (RSI < 30);
   sinalV := (minima < maxDA) and (maxima > maxDA) and (minima > vlrFiboV) and (time < SaidaV);
 
   ////////////////////////////////////////
@@ -57,6 +81,17 @@ Begin
 
     If (fechamento > vlrFiboC) or (fechamento < vlrStopC) Then
       ClosePosition;
+     // Verificar se o preço atingiu o stop loss
+      
+            if (Low < StopLoss) or (High > TakeProfit) then
+            ClosePosition;
+            // Registrar a operação no journal
+            registrar_operacao(...)
+
+if (High > TakeProfit) then
+            // Aumentar o stop loss ou reduzir a posição
+            StopLoss = BuyPrice * 1.1;
+            // Reduzir o tamanho da posição
   End
   Else If (IsSold) Then
   Begin
@@ -66,6 +101,17 @@ Begin
 
     If (fechamento < vlrFiboV) or (fechamento > vlrStopV) Then
       ClosePosition;
+
+ if (High > StopLoss) or (Low < TakeProfit) then
+            ClosePosition;
+
+        // Verificar se o preço atingiu o take profit (ações específicas)
+        if (Low < TakeProfit) then
+            // Aumentar o stop loss ou reduzir a posição
+            StopLoss = SellPrice * 0.9;
+            // Reduzir o tamanho da posição
+            // Registrar a operação no journal
+            registrar_operacao(...)
   End;
 
   ////////////////////////////////////////
