@@ -1,4 +1,8 @@
-// Definição de variáveis
+// ###############################################
+// ####### Estrategia Melhorada para Profit Pro ###
+// ###############################################
+
+// Configuração de inputs
 Inputs: 
     MediaCurta(8),
     MediaLonga(80),
@@ -6,6 +10,7 @@ Inputs:
     RiscoPorOperacao(0.01), // Risco por operação (% do capital)
     CapitalInicial(1000); // Capital inicial
 
+// Declaração de variáveis
 Vars: 
     MediaC(0), MediaL(0), ATR(0),
     StopC(0), StopV(0),
@@ -13,7 +18,7 @@ Vars:
     PerdaAcumuladaDia(0), Saldo(CapitalInicial),
     QuantidadeEntradas(0), PrecoEntrada(0), AlvoPreco(0);
 
-// Função para calcular ATR
+// Cálculo do ATR (Average True Range)
 ATR = AvgTrueRange(14);
 
 // Calcular médias móveis
@@ -34,7 +39,7 @@ else
 if PerdaAcumuladaDia >= CapitalInicial * 0.02 then 
     continue;
 
-// Sinais de entrada e gerenciamento de posições
+// Entradas e saídas baseadas em tendência e alinhamento de médias
 if Posicao = 0 then 
 begin
     // Sinal de compra
