@@ -3,7 +3,7 @@
 // ###############################################
 
 // Configuração de inputs
-Inputs: 
+const: 
     MediaCurta(8),
     MediaLonga(80),
     Alvo(1.618), // Razão de alvo
