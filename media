@@ -1,0 +1,107 @@
+// Definição de variáveis
+Inputs: 
+    MediaCurta(8),
+    MediaLonga(80),
+    Alvo(1.618), // Razão de alvo
+    RiscoPorOperacao(0.01), // Risco por operação (% do capital)
+    CapitalInicial(1000); // Capital inicial
+
+Vars: 
+    MediaC(0), MediaL(0), ATR(0),
+    StopC(0), StopV(0),
+    NumContrato(0), Posicao(0),
+    PerdaAcumuladaDia(0), Saldo(CapitalInicial),
+    QuantidadeEntradas(0), PrecoEntrada(0), AlvoPreco(0);
+
+// Função para calcular ATR
+ATR = AvgTrueRange(14);
+
+// Calcular médias móveis
+MediaC = Average(Close, MediaCurta);
+MediaL = Average(Close, MediaLonga);
+
+// Resetar perdas acumuladas no início do dia
+if Date <> Date[1] then 
+    PerdaAcumuladaDia = 0;
+
+// Calcular o número de contratos baseado no ATR e risco permitido
+if ATR > 0 then
+    NumContrato = IntPortion((Saldo * RiscoPorOperacao) / ATR)
+else 
+    NumContrato = 1; // Número mínimo de contratos
+
+// Gerenciamento de risco: evitar operar se limite diário de perdas foi atingido
+if PerdaAcumuladaDia >= CapitalInicial * 0.02 then 
+    continue;
+
+// Sinais de entrada e gerenciamento de posições
+if Posicao = 0 then 
+begin
+    // Sinal de compra
+    if Low > Low[1] and Low[1] < Low[2] and Close > Close[1] and MediaC > MediaL then 
+    begin
+        Buy NumContrato Contracts Next Bar at High + 5 Stop;
+        StopC = Low - ATR;
+        PrecoEntrada = High + 5;
+        QuantidadeEntradas = QuantidadeEntradas + 1;
+        Posicao = 1;
+    end;
+
+    // Sinal de venda
+    if High < High[1] and High[1] > High[2] and Close < Close[1] and MediaC < MediaL then 
+    begin
+        SellShort NumContrato Contracts Next Bar at Low - 5 Stop;
+        StopV = High + ATR;
+        PrecoEntrada = Low - 5;
+        QuantidadeEntradas = QuantidadeEntradas + 1;
+        Posicao = -1;
+    end;
+end;
+
+// Gerenciar posição de compra
+if Posicao = 1 then
+begin
+    AlvoPreco = PrecoEntrada + ((PrecoEntrada - StopC) * Alvo);
+
+    // Alvo atingido
+    if High >= AlvoPreco then 
+    begin
+        Sell NumContrato Contracts Next Bar at Market;
+        Saldo = Saldo + (AlvoPreco - PrecoEntrada) * NumContrato;
+        Posicao = 0;
+    end;
+
+    // Stop atingido
+    if Low <= StopC then 
+    begin
+        Sell NumContrato Contracts Next Bar at Market;
+        Saldo = Saldo - (PrecoEntrada - StopC) * NumContrato;
+        PerdaAcumuladaDia = PerdaAcumuladaDia + (PrecoEntrada - StopC) * NumContrato;
+        Posicao = 0;
+    end;
+end;
+
+// Gerenciar posição de venda
+if Posicao = -1 then
+begin
+    AlvoPreco = PrecoEntrada - ((PrecoEntrada - StopV) * Alvo);
+
+    // Alvo atingido
+    if Low <= AlvoPreco then 
+    begin
+        BuyToCover NumContrato Contracts Next Bar at Market;
+        Saldo = Saldo + (PrecoEntrada - AlvoPreco) * NumContrato;
+        Posicao = 0;
+    end;
+
+    // Stop atingido
+    if High >= StopV then 
+    begin
+        BuyToCover NumContrato Contracts Next Bar at Market;
+        Saldo = Saldo - (StopV - PrecoEntrada) * NumContrato;
+        PerdaAcumuladaDia = PerdaAcumuladaDia + (StopV - PrecoEntrada) * NumContrato;
+        Posicao = 0;
+    end;
+end;
+
+// Fim do código
