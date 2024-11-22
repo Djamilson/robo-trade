@@ -1,0 +1,64 @@
+// Robô Fibonacci Ajustado para Profit Pro
+
+input FiboLevel1 = 0.236; // Níveis de Fibonacci
+input FiboLevel2 = 0.382;
+input FiboLevel3 = 0.618;
+
+vars:
+    TopoAnterior(0), FundoAnterior(0),
+    PressaoAtual(0), 
+    ResistanciaAtual(0), SuporteAtual(0),
+    JaTestouRegiao(false), 
+    ForcaAtual(0),
+    UltimaOperacao(""),
+    PrecoEntrada(0);
+
+Begin
+    // 1. Identificar Topos e Fundos
+    if High > Highest(High, 5)[1] then 
+        TopoAnterior = High;
+    if Low < Lowest(Low, 5)[1] then 
+        FundoAnterior = Low;
+
+    // 2. Calcular Resistência e Suporte com Fibonacci
+    ResistanciaAtual = TopoAnterior - (TopoAnterior - FundoAnterior) * FiboLevel1;
+    SuporteAtual = FundoAnterior + (TopoAnterior - FundoAnterior) * FiboLevel1;
+
+    // 3. Verificar quebra de estrutura
+    if Close > TopoAnterior then
+        Print("Quebra de resistência detectada.");
+    if Close < FundoAnterior then
+        Print("Quebra de suporte detectada.");
+
+    // 4. Verificar se já testou a região
+    if High >= ResistanciaAtual or Low <= SuporteAtual then
+        JaTestouRegiao = True;
+
+    // 5. Determinar a pressão (vendedora ou compradora)
+    PressaoAtual = (Close - Open) / (High - Low);
+    if PressaoAtual > 0 then
+        Print("Pressão compradora.");
+    else
+        Print("Pressão vendedora.");
+
+    // 6. Tomar decisão de compra ou venda
+    if JaTestouRegiao and Close > ResistanciaAtual and PressaoAtual > 0 then
+        if UltimaOperacao <> "COMPRA" then
+            Buy("Compra", 1);
+            UltimaOperacao = "COMPRA";
+            PrecoEntrada = Close;
+    end;
+
+    if JaTestouRegiao and Close < SuporteAtual and PressaoAtual < 0 then
+        if UltimaOperacao <> "VENDA" then
+            Sell("Venda", 1);
+            UltimaOperacao = "VENDA";
+            PrecoEntrada = Close;
+    end;
+
+    // 7. Somente operações no dia atual
+    if Date[1] <> Date then
+        UltimaOperacao = ""; // Resetar operações ao iniciar novo dia
+        JaTestouRegiao = False;
+    end;
+End;
