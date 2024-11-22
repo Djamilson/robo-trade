@@ -1,0 +1,109 @@
+///////////////////////////////////////////
+// Robô Fibonacci Ajustado para Profit Pro
+///////////////////////////////////////////
+
+input FiboLevels = {0.236, 0.382, 0.5, 0.618, 0.786, 0.85}; // Níveis de Fibonacci ajustados
+input MA_Period = 14;         // Período da média móvel
+input RSI_Period = 14;        // Período do RSI
+input ATR_Period = 21;        // Período do ATR ajustado para 21
+input StopLossMultiplier = 3; // Multiplicador para o stop (baseado no True Range)
+input TakeProfitMultiplier = 1; // Multiplicador para o Take Profit baseado na barra de ignição
+input MinVolume = 5000;       // Volume mínimo para considerar o sinal
+input MaxOperacoesDia = 5;    // Máximo de operações por dia
+input MargemTolerancia = 0.002; // Tolerância para níveis de Fibonacci (0.2%)
+input BarraIgnicaoMultiplicador = 3; // Multiplicador da amplitude do True Range para barra de ignição
+
+vars:
+    TopoAnterior(0), FundoAnterior(0),
+    Resistencias[6], Suportes[6], 
+    maOperacao(""), UltimaOperacao(""), 
+    PrecoEntrada(0), StopAtual(0), TakeAtual(0),
+    MediaMovel(0), RSI(0), ATR(0), TR21(0),
+    OperacoesDia(0), VolumeMedio(0),
+    BarraIgnicaoMax(0), BarraIgnicaoMin(0),
+    TRMedio(0);
+
+Begin
+    // Calcular Média Móvel, ATR (21 períodos) e RSI
+    MediaMovel = Average(Close, MA_Period);
+    ATR = Average(TrueRange, ATR_Period);
+    RSI = RSI(Close, RSI_Period);
+    TR21 = TrueRange(21); // True Range de 21 períodos
+
+    // Calcular o TR Médio para ajustar o tamanho do stop
+    TRMedio = Average(TrueRange, ATR_Period);
+
+    // Atualizar volume médio
+    VolumeMedio = Average(Volume, 14);
+
+    // Filtrar condições de volume
+    if Volume < MinVolume or Volume < VolumeMedio * 0.5 or Volume > VolumeMedio * 2 then
+        Exit;
+
+    // Identificar topos e fundos
+    if High > Highest(High, 5)[1] then
+        TopoAnterior = High;
+    if Low < Lowest(Low, 5)[1] then
+        FundoAnterior = Low;
+
+    // Calcular níveis de suporte e resistência com Fibonacci
+    for i = 0 to ArraySize(FiboLevels) - 1 begin
+        Resistencias[i] = TopoAnterior - (TopoAnterior - FundoAnterior) * FiboLevels[i];
+        Suportes[i] = FundoAnterior + (TopoAnterior - FundoAnterior) * FiboLevels[i];
+    end;
+
+    // Calcular os limites de ignição da barra
+    BarraIgnicaoMax = High[1];
+    BarraIgnicaoMin = Low[1];
+
+    // Decisão de compra
+    if Close > Resistencias[ArraySize(FiboLevels) - 1] * (1 + MargemTolerancia) and 
+       Close > MediaMovel and RSI < 70 then
+        // Verificar se a barra de ignição é aceitável
+        if (BarraIgnicaoMax - BarraIgnicaoMin) <= TRMedio * BarraIgnicaoMultiplicador then
+            if UltimaOperacao <> "COMPRA" and OperacoesDia < MaxOperacoesDia then
+                // Calcular o Stop com base no TR
+                StopAtual = Close - (TR21 * StopLossMultiplier);
+                TakeAtual = Close + (BarraIgnicaoMax - BarraIgnicaoMin) * TakeProfitMultiplier;
+                
+                Buy("Compra", 1);
+                UltimaOperacao = "COMPRA";
+                PrecoEntrada = Close;
+                OperacoesDia += 1;
+        end;
+    end;
+
+    // Decisão de venda
+    if Close < Suportes[0] * (1 - MargemTolerancia) and 
+       Close < MediaMovel and RSI > 30 then
+        // Verificar se a barra de ignição é aceitável
+        if (BarraIgnicaoMax - BarraIgnicaoMin) <= TRMedio * BarraIgnicaoMultiplicador then
+            if UltimaOperacao <> "VENDA" and OperacoesDia < MaxOperacoesDia then
+                // Calcular o Stop com base no TR
+                StopAtual = Close + (TR21 * StopLossMultiplier);
+                TakeAtual = Close - (BarraIgnicaoMax - BarraIgnicaoMin) * TakeProfitMultiplier;
+                
+                Sell("Venda", 1);
+                UltimaOperacao = "VENDA";
+                PrecoEntrada = Close;
+                OperacoesDia += 1;
+        end;
+    end;
+
+    // Gerenciamento de risco
+    if UltimaOperacao = "COMPRA" and (Low <= StopAtual or High >= TakeAtual) then
+        Sell("Fechar Compra", 1);
+        UltimaOperacao = "";
+    end;
+
+    if UltimaOperacao = "VENDA" and (High >= StopAtual or Low <= TakeAtual) then
+        Buy("Fechar Venda", 1);
+        UltimaOperacao = "";
+    end;
+
+    // Reset diário
+    if Date[1] <> Date then
+        OperacoesDia = 0;
+        UltimaOperacao = "";
+    end;
+End;
