@@ -1,0 +1,101 @@
+///////////////////////////////////////////
+// Robô Fibonacci Ajustado para Profit Pro
+///////////////////////////////////////////
+const
+  PercentualFiboC = 90; // Ajustado
+  PercentualFiboV = 90; // Ajustado
+  SaidaC = 1640;
+  SaidaV = 1640;
+  PercentualRisco = 0.25; // Reduzido o risco por operação
+  nATR = 21; // Mantido para maior prazo
+  nRSI = 21;
+
+var
+  maxDA, minDA, vlrFiboC, vlrFiboV, vlrStopC, vlrStopV, StopLoss, TakeProfit: Float;
+  Capital, RiscoMaximo, LotSize, ATR, RSIValue: Float;
+  sinalC, sinalV: Boolean;
+  TR, TRSum: Float;
+  trailingStopC, trailingStopV: Float;
+  i: Integer;
+
+begin
+  ////////////////////////////////////////
+  // CÁLCULO DOS INDICADORES
+  ////////////////////////////////////////
+
+  TRSum := 0;
+  for i := 1 to nATR do
+  begin
+    TR := Max(High[i] - Low[i], Abs(High[i] - Close[i-1]));
+    TR := Max(TR, Abs(Low[i] - Close[i-1]));
+    TRSum := TRSum + TR;
+  end;
+  ATR := TRSum / nATR;
+
+  RSIValue := RSI(nRSI, 0);
+  maxDA := HighD(1);
+  minDA := LowD(1);
+  vlrFiboC := minDA + ((maxDA - minDA) * (PercentualFiboC / 100));
+  vlrFiboV := maxDA - ((maxDA - minDA) * (PercentualFiboV / 100));
+
+  ////////////////////////////////////////
+  // GERENCIAMENTO DE RISCO
+  ////////////////////////////////////////
+
+  Capital := 1000;
+  RiscoMaximo := Capital * (PercentualRisco / 100);
+  LotSize := Max(1, RiscoMaximo / ATR);
+  StopLoss := ATR * 0.5; // Mais conservador
+  TakeProfit := ATR * 1.5; // Ajustado
+
+  ////////////////////////////////////////
+  // SINAIS DE ENTRADA
+  ////////////////////////////////////////
+
+  sinalC := (Close >= minDA) and (Close <= vlrFiboC) and (RSIValue < 50) and (Time < SaidaC);
+  sinalV := (Close <= maxDA) and (Close >= vlrFiboV) and (RSIValue > 50) and (Time < SaidaV);
+
+  if (sinalC) and (Position = 0) then
+    BuyAtMarket;
+
+  if (sinalV) and (Position = 0) then
+    SellShortAtMarket;
+
+  ////////////////////////////////////////
+  // GERENCIAMENTO DE POSIÇÕES
+  ////////////////////////////////////////
+
+  if (Position = 1) then
+  begin
+    trailingStopC := Max(trailingStopC, Close - ATR);
+    vlrStopC := trailingStopC;
+    SellToCoverLimit(BuyPrice + TakeProfit);
+    SellToCoverStop(vlrStopC);
+  end;
+
+  if (Position = -1) then
+  begin
+    trailingStopV := Min(trailingStopV, Close + ATR);
+    vlrStopV := trailingStopV;
+    BuyToCoverLimit(SellPrice - TakeProfit);
+    BuyToCoverStop(vlrStopV);
+  end;
+
+  ////////////////////////////////////////
+  // SAÍDA POR HORÁRIO
+  ////////////////////////////////////////
+
+  if (Position <> 0) and (Time >= SaidaC) then
+    ClosePosition;
+
+  ////////////////////////////////////////
+  // PLOTAGEM PARA DEBUG
+  ////////////////////////////////////////
+
+  Plot(maxDA );
+  Plot(minDA);
+  Plot(vlrFiboC);
+  Plot(vlrFiboV);
+  Plot(ATR);
+  Plot(RSIValue);
+end;
