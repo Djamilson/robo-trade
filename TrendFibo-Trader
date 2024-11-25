@@ -1,20 +1,24 @@
 ///////////////////////////////////////////
-// Robô Fibonacci com Tendência Ajustada
+// Robô Fibonacci com Controle de Perdas
+// e Ajustes de Sintaxe
 ///////////////////////////////////////////
 
 const
-  PercentualFiboC   = 61.8;  // Nível Fibonacci para compras
-  PercentualFiboV   = 38.2;  // Nível Fibonacci para vendas
-  PercentualRisco   = 0.02;  // Risco por operação (2% do capital)
-  TakeProfitFactor  = 1.5;   // Multiplicador do ATR para take profit
-  StopLossFactor    = 1.0;   // Multiplicador do ATR para stop loss
-  LimitePerdaDiaria = -100;  // Limite diário de perda em reais
-  nATR              = 14;    // Período para cálculo do ATR
-  nRSI              = 29;    // Período para cálculo do RSI
-  nMediaCurta       = 9;     // Período da média móvel curta
-  nMediaLonga       = 21;    // Período da média móvel longa
-  SaidaC            = 1640;  // Horário de saída para compra
-  SaidaV            = 1640;  // Horário de saída para venda
+  PercentualFiboC     = 61.8;  // Nível Fibonacci para compras
+  PercentualFiboV     = 38.2;  // Nível Fibonacci para vendas
+  PercentualRisco     = 0.02;  // Risco por operação (2% do capital)
+  TakeProfitFactor    = 1.2;   // Multiplicador do ATR para take profit
+  StopLossFactor      = 0.8;   // Multiplicador do ATR para stop loss
+  LimitePerdaDiaria   = -100;  // Limite diário de perda em reais
+  nATR                = 14;    // Período para cálculo do ATR
+  nRSI                = 100;    // Período para cálculo do RSI
+  nMediaCurta         = 9;     // Período da média móvel curta
+  nMediaLonga         = 21;    // Período da média móvel longa
+  ParamSinalCompra    = 90;    // Parâmetro ajustável para sinal de compra
+  ParamSinalVenda     = 80;    // Parâmetro ajustável para sinal de venda
+  DiasPerdaConsecutiva = 2;    // Dias consecutivos de perda antes de pausa
+  DiasPausaSemOperar   = 7;    // Dias de pausa após atingir limite de perda
+  HoraSaida           = 164000; // Hora de saída no formato HHMMSS (16:40:00)
 
 var
   maxDA, minDA, vlrFiboC, vlrFiboV, StopLoss, TakeProfit: Float;
@@ -22,7 +26,8 @@ var
   MediaCurta, MediaLonga: Float;
   sinalC, sinalV, tendenciaAlta: Boolean;
   TR, TRSum, somaMediaCurta, somaMediaLonga: Float;
-  DiaAtual, Position, i: Integer;
+  DiaAtual, Position, i, DiasSemOperar: Integer;
+  PerdasConsecutivas, UltimoDiaPerda: Integer;
   StopExecution: Boolean;
 
 begin
@@ -34,8 +39,38 @@ begin
   if (Date <> DiaAtual) then
   begin
     DiaAtual := Date;
-    GanhoDiario := 0;
+
+    // Verifica se houve perda no dia anterior
+    if GanhoDiario < 0 then
+    begin
+      PerdasConsecutivas := PerdasConsecutivas + 1;
+      UltimoDiaPerda := Date;
+    end
+    else
+      PerdasConsecutivas := 0; // Reinicia contagem se não houve perda
+
+    // Verifica se atingiu limite de perdas consecutivas
+    if PerdasConsecutivas >= DiasPerdaConsecutiva then
+    begin
+      DiasSemOperar := DiasPausaSemOperar;
+      PerdasConsecutivas := 0; // Reseta após ativar a pausa
+    end;
+
+    // Reduz dias sem operar caso esteja em pausa
+    if DiasSemOperar > 0 then
+      DiasSemOperar := DiasSemOperar - 1;
+
+    GanhoDiario := 0; // Reinicia ganho diário
     StopExecution := False; // Reinicia execução diária
+  end;
+
+  ////////////////////////////////////////
+  // VERIFICAÇÃO DE PAUSA
+  ////////////////////////////////////////
+  if DiasSemOperar > 0 then
+  begin
+    PlotText("Em pausa por perdas", Close, clRed);
+    StopExecution := True; // Bloqueia execução durante a pausa
   end;
 
   ////////////////////////////////////////
@@ -100,13 +135,13 @@ begin
     ////////////////////////////////////////
     if tendenciaAlta then
     begin
-      sinalC := (Close >= minDA) and (Close <= vlrFiboC) and (RSIValue < 90);
-      sinalV := (Close <= maxDA) and (Close >= vlrFiboV) and (RSIValue > 80);
+      sinalC := (Close >= minDA) and (Close <= vlrFiboC) and (RSIValue < ParamSinalCompra);
+      sinalV := (Close <= maxDA) and (Close >= vlrFiboV) and (RSIValue > ParamSinalVenda);
     end
     else
     begin
-      sinalV := (Close >= minDA) and (Close <= vlrFiboC) and (RSIValue < 90);
-      sinalC := (Close <= maxDA) and (Close >= vlrFiboV) and (RSIValue > 80);
+      sinalV := (Close >= minDA) and (Close <= vlrFiboC) and (RSIValue < ParamSinalCompra);
+      sinalC := (Close <= maxDA) and (Close >= vlrFiboV) and (RSIValue > ParamSinalVenda);
     end;
 
     if sinalC and (Position = 0) then
@@ -155,7 +190,7 @@ begin
     ////////////////////////////////////////
     // SAÍDA POR HORÁRIO
     ////////////////////////////////////////
-    if (Position <> 0) and (Time >= SaidaC) then
+    if (Position <> 0) and (Time >= HoraSaida) then
     begin
       ClosePosition();
       PlotText("Saída por Horário", Close, clYellow);
