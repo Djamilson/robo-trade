@@ -1,0 +1,121 @@
+// Robô Fibonacci Ajustado para WDOFUT
+///////////////////////////////////////////
+
+const
+  PercentualFiboC = 90;
+  PercentualFiboV = 60;
+  SaidaC = 1640; // Horário limite para compras
+  SaidaV = 1640; // Horário limite para vendas
+  PercentualRisco = 0.25; // Percentual de risco permitido
+  nATR = 21; // Período mais curto para ATR
+  nRSI = 9; // Período mais curto para RSI
+  nATRII = 84; // 
+  nRSIII = 30; // 
+  LimitePerdaDiaria = -50; // Limite de perda diária ajustado
+  CapitalInicial = 1000; // Capital inicial para cálculo do risco
+
+var
+  maxDA, minDA, vlrFiboC, vlrFiboV: Float;
+  StopLoss, TakeProfit, ATR, RSIValue: Float;
+  Capital, RiscoMaximo, LotSize, GanhoDiario: Float;
+  trailingStopC, trailingStopV: Float;
+  TRSum, TR: Float;
+  DiaAtual: Integer;
+  PerdaAtingida, sinalC, sinalV: Boolean;
+  i: Integer;
+
+begin
+  // Inicialização diária
+  if CurrentDate <> DiaAtual then
+  begin
+    DiaAtual := CurrentDate;
+    GanhoDiario := 0;
+    PerdaAtingida := False;
+  end;
+
+  // Cálculo do ATR
+  TRSum := 0;
+  for i := 1 to nATR do
+  begin
+    TR := Max(High[i] - Low[i], Abs(High[i] - Close[i-1]));
+    TR := Max(TR, Abs(Low[i] - Close[i-1]));
+    TRSum := TRSum + TR;
+  end;
+  ATR := TRSum / nATR;
+
+  // Cálculo do RSI e níveis de Fibonacci
+  RSIValue := RSI(nRSI, 0);
+  maxDA := HighD(1); // Máxima do dia anterior
+  minDA := LowD(1);  // Mínima do dia anterior
+  vlrFiboC := minDA + ((maxDA - minDA) * (PercentualFiboC / 100)); // Nível Fibonacci compra
+  vlrFiboV := maxDA - ((maxDA - minDA) * (PercentualFiboV / 100)); // Nível Fibonacci venda
+
+  // Gerenciamento de risco
+  Capital := CapitalInicial; // Capital inicial
+  RiscoMaximo := Capital * (PercentualRisco / 100); // Risco permitido
+  LotSize := Max(1, RiscoMaximo / ATR); // Tamanho da posição baseado no ATR
+  StopLoss := ATR * 0.3; // Stop Loss dinâmico (mais apertado para WDOFUT)
+  TakeProfit := ATR * 1.0; // Take Profit dinâmico (relativo ao ATR)
+
+  // Verificar limite de perda diária
+  if GanhoDiario <= LimitePerdaDiaria then
+  begin
+    PerdaAtingida := True;
+    PlotText("Limite diário atingido", Close, clRed);
+  end;
+
+  // Executar lógica somente se o limite de perda não foi atingido
+  if not PerdaAtingida then
+  begin
+    // Geração de sinais
+    sinalV := (Close >= vlrFiboC) and (RSIValue > nATRII) and (Time < SaidaC); // RSI reduzido para gerar mais sinais
+    sinalC := (Close <= vlrFiboV) and (RSIValue < nRSIII ) and (Time < SaidaV);
+
+    // Execução de entradas
+    if sinalC and (Position = 0) then
+    begin
+      BuyAtMarket();
+      trailingStopC := Close - ATR; // Definir stop inicial para compras
+      PlotText("Entrada Compra", Close, clGreen);
+    end;
+
+    if sinalV and (Position = 0) then
+    begin
+      SellShortAtMarket();
+      trailingStopV := Close + ATR; // Definir stop inicial para vendas
+      PlotText("Entrada Venda", Close, clRed);
+    end;
+
+    // Gerenciamento de posições abertas
+    if (Position = 1) then // Posição de compra aberta
+    begin
+      trailingStopC := Max(trailingStopC, Close - ATR); // Ajuste do trailing stop
+      SellToCoverLimit(BuyPrice + TakeProfit); // Saída por Take Profit
+      SellToCoverStop(trailingStopC); // Saída por Stop Loss
+      GanhoDiario := GanhoDiario + (TakeProfit - StopLoss);
+    end
+    else if (Position = -1) then // Posição de venda aberta
+    begin
+      trailingStopV := Min(trailingStopV, Close + ATR); // Ajuste do trailing stop
+      BuyToCoverLimit(SellPrice - TakeProfit); // Saída por Take Profit
+      BuyToCoverStop(trailingStopV); // Saída por Stop Loss
+      GanhoDiario := GanhoDiario + (TakeProfit - StopLoss);
+    end;
+
+    // Fechar posição ao atingir horário limite
+    if (Position <> 0) and (Time >= SaidaC) then
+    begin
+      ClosePosition();
+      PlotText("Saída por horário", Close, clYellow);
+    end;
+  end;
+
+  // Plotagem para debug
+  Plot(maxDA);
+  Plot(minDA);
+  Plot(vlrFiboC);
+  Plot(vlrFiboV);
+  Plot(ATR);
+  Plot(RSIValue);
+  Plot(GanhoDiario);
+end.
