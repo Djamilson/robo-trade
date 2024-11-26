@@ -29,6 +29,9 @@ const
   // Dias de pausa após atingir limite de perda
   HoraSaida             = 164000;
   // Hora de saída no formato HHMMSS (16:40:00)
+
+  FatorEqualizaçãoC = 50;
+  FatorEqualizaçãoV = 60;
 var
   maxDA,minDA,vlrFiboC,vlrFiboV,StopLoss,TakeProfit : Float;
   CapitalInicial,LimitePerdaDiaria,Capital,RiscoMaximo,LotSize,ATR,RSIValue,GanhoDiario : Float;
@@ -136,13 +139,13 @@ begin
       ////////////////////////////////////////
       if tendenciaAlta then
         begin
-          sinalC := (Close >= vlrFiboV) and (RSIValue > 60);
-          sinalV := (Close <= vlrFiboC) and (RSIValue < 50);
+          sinalC := (Close >= vlrFiboV) and (RSIValue >   FatorEqualizaçãoV);
+          sinalV := (Close <= vlrFiboC) and (RSIValue < FatorEqualizaçãoC);
         end
       else 
         begin
-          sinalC := (Close >= vlrFiboV) and (RSIValue < 60);
-          sinalV := (Close <= vlrFiboC) and (RSIValue > 50);
+          sinalC := (Close >= vlrFiboV) and (RSIValue < FatorEqualizaçãoV);
+          sinalV := (Close <= vlrFiboC) and (RSIValue > FatorEqualizaçãoC);
         end;
       if sinalC and (Position = 0) then
         begin
@@ -207,13 +210,3 @@ begin
       Plot(GanhoDiario);
     end;
 end.
-
-
-
-
-
-
-
-
-
-
