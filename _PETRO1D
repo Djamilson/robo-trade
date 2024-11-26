@@ -1,0 +1,219 @@
+///////////////////////////////////////////
+// Robô Fibonacci com Controle de Risco
+// Limite de Perda: 5% do Capital Inicial
+///////////////////////////////////////////
+const
+  PercentualFiboC       = 61.8;
+  // Nível Fibonacci para compras
+  PercentualFiboV       = 38.2;
+  // Nível Fibonacci para vendas
+  PercentualRisco       = 0.02;
+  // Risco por operação (2% do capital)
+  TakeProfitFactor      = 1.2;
+  // Multiplicador do ATR para take profit
+  StopLossFactor        = 0.8;
+  // Multiplicador do ATR para stop loss
+  PercentualPerdaDiaria = 0.05;
+  // Limite diário de perda como 5% do capital
+  nATR                  = 14;
+  // Período para cálculo do ATR
+  nRSI                  = 20;
+  // Período para cálculo do RSI
+  nMediaCurta           = 9;
+  // Período da média móvel curta
+  nMediaLonga           = 21;
+  // Período da média móvel longa
+  DiasPerdaConsecutiva  = 2;
+  // Dias consecutivos de perda antes de pausa
+  DiasPausaSemOperar    = 7;
+  // Dias de pausa após atingir limite de perda
+  HoraSaida             = 164000;
+  // Hora de saída no formato HHMMSS (16:40:00)
+var
+  maxDA,minDA,vlrFiboC,vlrFiboV,StopLoss,TakeProfit : Float;
+  CapitalInicial,LimitePerdaDiaria,Capital,RiscoMaximo,LotSize,ATR,RSIValue,GanhoDiario : Float;
+  MediaCurta,MediaLonga : Float;
+  sinalC,sinalV,tendenciaAlta : Boolean;
+  TR,TRSum,somaMediaCurta,somaMediaLonga : Float;
+  DiaAtual,Position,i,DiasSemOperar : Integer;
+  PerdasConsecutivas,UltimoDiaPerda : Integer;
+  StopExecution : Boolean;
+begin
+  StopExecution := False;
+  ////////////////////////////////////////
+  // INICIALIZAÇÃO DE CAPITAL E RESET DIÁRIO
+  ////////////////////////////////////////
+  if DiaAtual = 0 then
+    CapitalInicial := 1000;
+  // Inicialize o capital inicial aqui
+  if (Date <> DiaAtual) then
+    begin
+      DiaAtual := Date;
+      // Calcular limite de perda diária como 5% do capital inicial
+      LimitePerdaDiaria := - CapitalInicial * PercentualPerdaDiaria;
+      // Verifica se houve perda no dia anterior
+      if GanhoDiario < 0 then
+        begin
+          PerdasConsecutivas := PerdasConsecutivas + 1;
+          UltimoDiaPerda := Date;
+        end
+      else 
+        PerdasConsecutivas := 0;
+      // Reinicia contagem se não houve perda
+      // Verifica se atingiu limite de perdas consecutivas
+      if PerdasConsecutivas >= DiasPerdaConsecutiva then
+        begin
+          DiasSemOperar := DiasPausaSemOperar;
+          PerdasConsecutivas := 0;
+          // Reseta após ativar a pausa
+        end;
+      // Reduz dias sem operar caso esteja em pausa
+      if DiasSemOperar > 0 then
+        DiasSemOperar := DiasSemOperar - 1;
+      GanhoDiario := 0;
+      // Reinicia ganho diário
+      StopExecution := False;
+      // Reinicia execução diária
+    end;
+  ////////////////////////////////////////
+  // VERIFICAÇÃO DE PAUSA
+  ////////////////////////////////////////
+  if DiasSemOperar > 0 then
+    begin
+      PlotText("Em pausa por perdas",Close,clRed);
+      StopExecution := True;
+      // Bloqueia execução durante a pausa
+    end;
+  ////////////////////////////////////////
+  // GERENCIAMENTO DE RISCO
+  ////////////////////////////////////////
+  if GanhoDiario <= LimitePerdaDiaria then
+    begin
+      PlotText("Limite diário atingido",Close,clRed);
+      StopExecution := True;
+    end;
+  if StopExecution then
+    begin
+      PlotText("Execução interrompida",Close,clRed);
+    end
+  else 
+    begin
+      ////////////////////////////////////////
+      // CÁLCULO DOS INDICADORES
+      ////////////////////////////////////////
+      // Cálculo do ATR
+      TRSum := 0;
+      for i := 1 to nATR do
+        begin
+          TR := Max(High[i] - Low[i],Abs(High[i] - Close[i - 1]));
+          TR := Max(TR,Abs(Low[i] - Close[i - 1]));
+          TRSum := TRSum + TR;
+        end;
+      ATR := TRSum / nATR;
+      // Cálculo do RSI
+      RSIValue := RSI(nRSI,0);
+      // Cálculo dos níveis de Fibonacci
+      maxDA := HighD(1);
+      minDA := LowD(1);
+      vlrFiboC := minDA + ((maxDA - minDA) * (PercentualFiboC / 100));
+      vlrFiboV := maxDA - ((maxDA - minDA) * (PercentualFiboV / 100));
+      // Definição de Take Profit e Stop Loss dinâmicos
+      TakeProfit := ATR * TakeProfitFactor;
+      StopLoss := ATR * StopLossFactor;
+      // Cálculo das médias móveis (manual)
+      somaMediaCurta := 0;
+      somaMediaLonga := 0;
+      for i := 0 to nMediaCurta - 1 do
+        somaMediaCurta := somaMediaCurta + Close[i];
+      MediaCurta := somaMediaCurta / nMediaCurta;
+      for i := 0 to nMediaLonga - 1 do
+        somaMediaLonga := somaMediaLonga + Close[i];
+      MediaLonga := somaMediaLonga / nMediaLonga;
+      // Validação de tendência
+      tendenciaAlta := MediaCurta > MediaLonga;
+      ////////////////////////////////////////
+      // SINAIS DE ENTRADA (Baseados na Tendência)
+      ////////////////////////////////////////
+      if tendenciaAlta then
+        begin
+          sinalC := (Close >= vlrFiboV) and (RSIValue > 60);
+          sinalV := (Close <= vlrFiboC) and (RSIValue < 50);
+        end
+      else 
+        begin
+          sinalC := (Close >= vlrFiboV) and (RSIValue < 60);
+          sinalV := (Close <= vlrFiboC) and (RSIValue > 50);
+        end;
+      if sinalC and (Position = 0) then
+        begin
+          BuyAtMarket();
+          PlotText("Compra Executada",High,clBlue);
+        end;
+      if sinalV and (Position = 0) then
+        begin
+          SellShortAtMarket();
+          PlotText("Venda Executada",Low,clBlue);
+        end;
+      ////////////////////////////////////////
+      // GESTÃO DE POSIÇÕES
+      ////////////////////////////////////////
+      if (Position = 1) then
+        // Posição comprada
+        begin
+          if (Close >= BuyPrice + TakeProfit) then
+            begin
+              SellToCoverLimit(BuyPrice + TakeProfit);
+              PlotText("Take Profit Compra",Close,clYellow);
+            end
+          else if (Close <= BuyPrice - StopLoss) then
+            begin
+              SellToCoverStop(BuyPrice - StopLoss);
+              PlotText("Stop Loss Compra",Close,clRed);
+            end;
+        end;
+      if (Position = - 1) then
+        // Posição vendida
+        begin
+          if (Close <= SellPrice - TakeProfit) then
+            begin
+              BuyToCoverLimit(SellPrice - TakeProfit);
+              PlotText("Take Profit Venda",Close,clYellow);
+            end
+          else if (Close >= SellPrice + StopLoss) then
+            begin
+              BuyToCoverStop(SellPrice + StopLoss);
+              PlotText("Stop Loss Venda",Close,clRed);
+            end;
+        end;
+      ////////////////////////////////////////
+      // SAÍDA POR HORÁRIO
+      ////////////////////////////////////////
+      if (Position <> 0) and (Time >= HoraSaida) then
+        begin
+          ClosePosition();
+          PlotText("Saída por Horário",Close,clYellow);
+        end;
+      ////////////////////////////////////////
+      // PLOTAGEM PARA DEPURAÇÃO
+      ////////////////////////////////////////
+      Plot(maxDA);
+      Plot(minDA);
+      Plot(vlrFiboC);
+      Plot(vlrFiboV);
+      Plot(ATR);
+      Plot(RSIValue);
+      Plot(MediaCurta);
+      Plot(MediaLonga);
+      Plot(GanhoDiario);
+    end;
+end.
+
+
+
+
+
+
+
+
+
+
