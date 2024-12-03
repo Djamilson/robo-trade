@@ -1,0 +1,173 @@
+///////////////////////////////////////////
+// Robô Fibonacci com Controle de Risco Otimizado
+///////////////////////////////////////////
+
+const
+  PercentualFiboC        = 61.8;
+  PercentualFiboV        = 38.2;
+  PercentualPerdaDiaria  = 0.03;   // 3% do capital inicial por dia
+  PerdaMaximaOperacao    = 50.0;  // Perda máxima por operação
+  DiasSuspensao          = 4;     // Dias sem operar após perda em 3 dias
+  DiasSuspensaoPerda     = 2;     // Dias sem operar após perda em 2 dias
+  LimitePerdaDiaria      = -0.50;  // Limite diário fixo
+  LimitePerdasDoisDias   = -0.20; // Limite de perda acumulada em dois dias
+  LimitePerdasTresDias   = -0.20; // Limite de perda acumulada em três dias
+  nATR                   = 21;
+  nMediaCurta            = 50;
+  nMediaLonga            = 9;
+  HoraSaida              = 164000; // Formato HHMMSS
+  TicksTakeProfit        = 25;    // Take Profit ajustado
+  TicksStopLoss          = 15;    // Stop Loss ajustado
+  ValorTick              = 0.5;
+
+var
+  CapitalInicial, GanhoDiario, PerdaDiariaAcumulada: Float;
+  PerdasDoisDias, PerdasTresDias: Float;
+  ATR, MediaCurta, MediaLonga: Float;
+  vlrFiboC, vlrFiboV, TakeProfit, StopLoss: Float;
+  DiaAtual, DiasSemOperar, Position: Integer;
+  sinalC, sinalV, StopExecution, tendenciaAlta: Boolean;
+  somaATR, somaMediaCurta, somaMediaLonga, maxDA, minDA, PerdaAtual: Float;
+  i: Integer;
+  HistoricoPerdas: array[0..2] of Float;
+
+begin
+  ////////////////////////////////////////
+  // INICIALIZAÇÃO DIÁRIA
+  ////////////////////////////////////////
+  if (Date <> DiaAtual) then
+  begin
+    DiaAtual := Date;
+
+    // Atualizar histórico de perdas diárias
+    for i := 2 downto 1 do
+      HistoricoPerdas[i] := HistoricoPerdas[i - 1];
+    HistoricoPerdas[0] := PerdaDiariaAcumulada;
+
+    // Calcular perdas acumuladas nos últimos dois e três dias
+    PerdasDoisDias := HistoricoPerdas[0] + HistoricoPerdas[1];
+    PerdasTresDias := PerdasDoisDias + HistoricoPerdas[2];
+
+    // Verificar perdas dos dois últimos dias
+    if (PerdasDoisDias < LimitePerdasDoisDias) then
+    begin
+      DiasSemOperar := DiasSuspensaoPerda;
+      PlotText("Suspensão de 2 dias por perdas acumuladas", Close, clRed);
+    end;
+
+    // Verificar perdas dos três últimos dias
+    if (PerdasTresDias < LimitePerdasTresDias) then
+    begin
+      DiasSemOperar := DiasSuspensao;
+      PlotText("Suspensão de 4 dias por perdas acumuladas", Close, clRed);
+    end;
+
+    GanhoDiario := 0;
+    PerdaDiariaAcumulada := 0;
+
+    if DiasSemOperar > 0 then
+    begin
+      StopExecution := True;
+      DiasSemOperar := DiasSemOperar - 1;
+    end
+    else
+      StopExecution := False;
+  end;
+
+  ////////////////////////////////////////
+  // VERIFICAÇÃO DE INTERRUPÇÃO
+  ////////////////////////////////////////
+  if (StopExecution or (PerdaDiariaAcumulada <= LimitePerdaDiaria)) then
+  begin
+    PlotText("Execução interrompida por limite diário ou suspensão", Close, clRed);
+    StopExecution := True;
+  end
+  else
+    StopExecution := False;
+
+  ////////////////////////////////////////
+  // CÁLCULO DOS INDICADORES
+  ////////////////////////////////////////
+  somaATR := 0;
+  for i := 0 to nATR - 1 do
+    somaATR := somaATR + (High[i] - Low[i]);
+  ATR := somaATR / nATR;
+
+  somaMediaCurta := 0;
+  for i := 0 to nMediaCurta - 1 do
+    somaMediaCurta := somaMediaCurta + Close[i];
+  MediaCurta := somaMediaCurta / nMediaCurta;
+
+  somaMediaLonga := 0;
+  for i := 0 to nMediaLonga - 1 do
+    somaMediaLonga := somaMediaLonga + Close[i];
+  MediaLonga := somaMediaLonga / nMediaLonga;
+
+  maxDA := HighD(1);
+  minDA := LowD(1);
+  vlrFiboC := minDA + ((maxDA - minDA) * (PercentualFiboC / 100));
+  vlrFiboV := maxDA - ((maxDA - minDA) * (PercentualFiboV / 100));
+  tendenciaAlta := MediaCurta > MediaLonga;
+
+  ////////////////////////////////////////
+  // SINAIS DE ENTRADA
+  ////////////////////////////////////////
+  sinalC := (Close >= vlrFiboC) and tendenciaAlta;
+  sinalV := (Close <= vlrFiboV) and not tendenciaAlta;
+
+  if sinalC and (Position = 0) then
+  begin
+    BuyAtMarket();
+    TakeProfit := Close + TicksTakeProfit * ValorTick;
+    StopLoss := Close - TicksStopLoss * ValorTick;
+    PlotText("Compra Executada", High, clBlue);
+  end;
+
+  if sinalV and (Position = 0) then
+  begin
+    SellShortAtMarket();
+    TakeProfit := Close - TicksTakeProfit * ValorTick;
+    StopLoss := Close + TicksStopLoss * ValorTick;
+    PlotText("Venda Executada", Low, clBlue);
+  end;
+
+  ////////////////////////////////////////
+  // GESTÃO DE POSIÇÕES
+  ////////////////////////////////////////
+  if (Position <> 0) then
+  begin
+    PerdaAtual := abs(StopLoss - Close);
+
+    if (PerdaAtual >= PerdaMaximaOperacao) then
+    begin
+      ClosePosition();
+      PerdaDiariaAcumulada := PerdaDiariaAcumulada - PerdaAtual;
+      PlotText("Perda máxima atingida e posição encerrada", Close, clRed);
+    end
+    else if ((Position = 1) and (Close >= TakeProfit)) or
+            ((Position = -1) and (Close <= TakeProfit)) then
+    begin
+      ClosePosition();
+      PlotText("Lucro atingido e posição encerrada", Close, clGreen);
+    end;
+  end;
+
+  ////////////////////////////////////////
+  // SAÍDA POR HORÁRIO
+  ////////////////////////////////////////
+  if (Time >= HoraSaida) and (Position <> 0) then
+  begin
+    ClosePosition();
+    PlotText("Encerrado por horário", Close, clYellow);
+  end;
+end.
+
+
+
+
+
+
+
+
+
+
