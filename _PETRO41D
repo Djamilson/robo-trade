@@ -3,6 +3,7 @@
 // Limite de Perda: 5% do Capital Inicial
 ///////////////////////////////////////////
 const
+  OffeSet               = 20;
   PercentualFiboC       = 61.8;
   // Nível Fibonacci para compras
   PercentualFiboV       = 38.2;
@@ -17,11 +18,11 @@ const
   // Limite diário de perda como 5% do capital
   nATR                  = 14;
   // Período para cálculo do ATR
-  nRSI                  = 20;
+  nRSI                  = 40;
   // Período para cálculo do RSI
-  nMediaCurta           = 9;
+  nMediaCurta           = 80;
   // Período da média móvel curta
-  nMediaLonga           = 21;
+  nMediaLonga           = 100;
   // Período da média móvel longa
   DiasPerdaConsecutiva  = 2;
   // Dias consecutivos de perda antes de pausa
@@ -29,9 +30,8 @@ const
   // Dias de pausa após atingir limite de perda
   HoraSaida             = 164000;
   // Hora de saída no formato HHMMSS (16:40:00)
-
-  FatorEqualizaçãoC = 50;
-  FatorEqualizaçãoV = 60;
+  FatorEqualizaçãoC     = 50;
+  FatorEqualizaçãoV     = 60;
 var
   maxDA,minDA,vlrFiboC,vlrFiboV,StopLoss,TakeProfit : Float;
   CapitalInicial,LimitePerdaDiaria,Capital,RiscoMaximo,LotSize,ATR,RSIValue,GanhoDiario : Float;
@@ -139,7 +139,7 @@ begin
       ////////////////////////////////////////
       if tendenciaAlta then
         begin
-          sinalC := (Close >= vlrFiboV) and (RSIValue >   FatorEqualizaçãoV);
+          sinalC := (Close >= vlrFiboV) and (RSIValue > FatorEqualizaçãoV);
           sinalV := (Close <= vlrFiboC) and (RSIValue < FatorEqualizaçãoC);
         end
       else 
