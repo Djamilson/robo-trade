@@ -1,0 +1,158 @@
+///////////////////////////////////////////////////////////
+//                   ROBÔ IFR OTIMIZADO                  //
+///////////////////////////////////////////////////////////
+
+const
+  IFR_Compra = 35;                  // IFR para condição de compra
+  IFR_Venda = 65;                   // IFR para condição de venda
+  PercentualPerdaDiaria = 1.1;        // Perda máxima diária (em %)
+  PerdaMaximaOperacao = 5.4;         // Perda máxima por operação (em pontos)
+  DiasSuspensao = 2;                // Dias sem operar após perdas acumuladas
+  TempoMaximoOperacao = 51;        // Tempo máximo de operação (em segundos)
+  HoraSaida = 164000;               // Horário de saída no formato HHMMSS
+  CapitalInicial = 1000;            // Capital inicial disponível
+  ValorTick = 0.5;                  // Valor do tick (ajuste conforme ativo)
+
+var
+  PerdaDiariaAcumulada, PrecoEntrada, StopLoss, TakeProfit: Float;
+  Position, DiaAtual, DiasSemOperar, PerdasConsecutivas, HoraInicioOperacao: Integer;
+  StopExecution: Boolean;
+
+begin
+  ////////////////////////////////////////
+  // INICIALIZAÇÃO DIÁRIA
+  ////////////////////////////////////////
+  if DiaAtual = 0 then
+  begin
+    DiaAtual := Date;
+    PerdaDiariaAcumulada := 0;
+    DiasSemOperar := 0;
+    Position := 0; // Sem posições no início
+    StopExecution := False;
+    PerdasConsecutivas := 0;
+    PrecoEntrada := 0;
+  end;
+
+  if DiaAtual <> Date then
+  begin
+    DiaAtual := Date;
+    PerdaDiariaAcumulada := 0;
+    PerdasConsecutivas := 0;
+
+    if DiasSemOperar > 0 then
+    begin
+      DiasSemOperar := DiasSemOperar - 1;
+      StopExecution := True;
+    end
+    else
+    begin
+      StopExecution := False;
+    end;
+  end;
+
+  ////////////////////////////////////////
+  // BLOQUEIO POR PERDAS ACUMULADAS
+  ////////////////////////////////////////
+  if PerdaDiariaAcumulada <= -(CapitalInicial * (PercentualPerdaDiaria / 100)) then
+  begin
+    StopExecution := True;
+    PlotText("Operações bloqueadas por perda diária!", Close, clRed);
+  end;
+
+  if StopExecution then
+  begin
+    // Não realiza operações se StopExecution estiver ativo
+    PlotText("Operações suspensas", Close, clRed);
+  end
+  else
+  begin
+    ////////////////////////////////////////
+    // SINAIS DE ENTRADA
+    ////////////////////////////////////////
+    if Position = 0 then
+    begin
+      // Sinal de compra
+      if RSI(9, 0) < IFR_Compra then
+      begin
+        BuyAtMarket();
+        PrecoEntrada := Close;
+        TakeProfit := Close + (PerdaMaximaOperacao * ValorTick);
+        StopLoss := Close - (PerdaMaximaOperacao * ValorTick);
+        HoraInicioOperacao := Time;
+        Position := 1; // Posição comprada
+        PlotText("Entrada comprada | IFR abaixo de compra", Close, clBlue);
+      end;
+
+      // Sinal de venda
+      if RSI(9, 0) > IFR_Venda then
+      begin
+        SellShortAtMarket();
+        PrecoEntrada := Close;
+        TakeProfit := Close - (PerdaMaximaOperacao * ValorTick);
+        StopLoss := Close + (PerdaMaximaOperacao * ValorTick);
+        HoraInicioOperacao := Time;
+        Position := -1; // Posição vendida
+        PlotText("Entrada vendida | IFR acima de venda", Close, clGreen);
+      end;
+    end;
+
+    ////////////////////////////////////////
+    // GESTÃO DE POSIÇÕES
+    ////////////////////////////////////////
+    if Position <> 0 then
+    begin
+      // Verificar Take Profit
+      if (Position = 1) and (Close >= TakeProfit) then
+      begin
+        ClosePosition();
+        Position := 0;
+        PlotText("Take Profit (Compra)", Close, clGreen);
+      end;
+
+      if (Position = -1) and (Close <= TakeProfit) then
+      begin
+        ClosePosition();
+        Position := 0;
+        PlotText("Take Profit (Venda)", Close, clGreen);
+      end;
+
+      // Verificar Stop Loss
+      if (Position = 1) and (Close <= StopLoss) then
+      begin
+        ClosePosition();
+        PerdaDiariaAcumulada := PerdaDiariaAcumulada - PerdaMaximaOperacao;
+        Position := 0;
+        PerdasConsecutivas := PerdasConsecutivas + 1;
+        PlotText("Stop Loss (Compra)", Close, clRed);
+      end;
+
+      if (Position = -1) and (Close >= StopLoss) then
+      begin
+        ClosePosition();
+        PerdaDiariaAcumulada := PerdaDiariaAcumulada - PerdaMaximaOperacao;
+        Position := 0;
+        PerdasConsecutivas := PerdasConsecutivas + 1;
+        PlotText("Stop Loss (Venda)", Close, clRed);
+      end;
+
+      // Encerrar operação por tempo máximo
+      if (Time - HoraInicioOperacao >= TempoMaximoOperacao) then
+      begin
+        ClosePosition();
+        Position := 0;
+        PerdasConsecutivas := PerdasConsecutivas + 1;
+        PlotText("Encerrado por tempo máximo", Close, clYellow);
+      end;
+    end;
+
+    ////////////////////////////////////////
+    // ENCERRAMENTO POR HORÁRIO
+    ////////////////////////////////////////
+    if (Time >= HoraSaida) and (Position <> 0) then
+    begin
+      ClosePosition();
+      Position := 0;
+      PlotText("Encerrado por horário", Close, clYellow);
+    end;
+  end;
+end.
