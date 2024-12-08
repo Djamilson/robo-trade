@@ -1,38 +1,166 @@
-Input
-  Alvo(1.15);
-  Stop(0.90);
-  HoraInicio(920);
-  HoraFim(1700);
-  HoraFechamento(1740);
+///////////////////////////////////////////
+// Robô com Controle de Risco Otimizado
+///////////////////////////////////////////
+
+const
+  Alvo = 5.0;                    // Relação de 5 para 1 no ganho
+  Stop =1.0;                    // Relação de 5 para 1 no stop
+  HoraInicio = 920;
+  HoraFim = 1700;
+  HoraFechamento = 1740;
+  PercentualPerdaDiaria = 0.03;   // 3% do capital inicial por dia
+  DiasSuspensao = 4;             // Dias sem operar após perdas acumuladas
+  CapitalInicial = 1000;         // Capital inicial
+  ValorTick = 0.5;               // Valor do tick
+  TempoMaximoOperacao = 120;     // Tempo máximo de operação em segundos (2 minutos)
+  StopAtrPeriodo = 100;           // Período usado no cálculo do Stop ATR
+  AvgTrueRangePeriodo = 10;      // Período usado no cálculo da volatilidade média
 
 var
-  Vol, sAtr: Float;
+  Vol, sAtr, PerdaDiariaAcumulada, GanhoAcumulado, PrecoEntrada, TakeProfit, StopLoss: Float;
+  DiaAtual, DiasSemOperar, Position, PerdasConsecutivas, HoraInicioOperacao: Integer;
+  StopExecution: Boolean;
 
-Inicio
-  sAtr := StopAtr(2, 20, 0);
-  Vol := AvgTrueRange(10, 0);
+begin
+  ////////////////////////////////////////
+  // INICIALIZAÇÃO DIÁRIA
+  ////////////////////////////////////////
+  if DiaAtual = 0 then
+  begin
+    DiaAtual := Date;
+    PerdaDiariaAcumulada := 0;
+    GanhoAcumulado := 0;
+    DiasSemOperar := 0;
+    Position := 0; // Sem posições no início
+    StopExecution := False;
+    PerdasConsecutivas := 0;
+    HoraInicioOperacao := 0;
+  end;
 
-  Se (IsBought) entao 
-    Inicio
-      SellToCoverLimit(BuyPrice + (Vol * Alvo));
-      SellToCoverStop(BuyPrice - (Vol * Stop), BuyPrice - (Vol * Stop) - 100);
-    Fim;
-    
-  Se (IsSold) entao
-    Inicio
-      BuyToCoverLimit(SellPrice - (Vol * Alvo));
-      BuyToCoverStop(SellPrice + (Vol * Stop), SellPrice + (Vol * Stop) + 100);
-    Fim;
+  if DiaAtual <> Date then
+  begin
+    DiaAtual := Date;
+    PerdaDiariaAcumulada := 0;
+    PerdasConsecutivas := 0;
+    HoraInicioOperacao := 0;
 
-  Se (HasPosition = False) e (Time >= HoraInicio) e (Time < HoraFim) entao
-    Inicio
-      Se (Minima > sAtr) entao
-        BuyLimit(sAtr);
+    if DiasSemOperar > 0 then
+    begin
+      DiasSemOperar := DiasSemOperar - 1;
+      StopExecution := True;
+    end
+    else
+    begin
+      StopExecution := False;
+    end;
+  end;
 
-      Se (Maxima < sAtr) entao
-        SellShortLimit(sAtr);
-    Fim;
+  ////////////////////////////////////////
+  // CÁLCULO DOS INDICADORES
+  ////////////////////////////////////////
+  sAtr := StopAtr(2, StopAtrPeriodo, 0);
+  Vol := AvgTrueRange(AvgTrueRangePeriodo, 0);
 
-  Se (Time > HoraFechamento) entao ClosePosition;
+  ////////////////////////////////////////
+  // ENTRADA EM OPERAÇÕES
+  ////////////////////////////////////////
+  if (HasPosition = False) and (Time >= HoraInicio) and (Time < HoraFim) and (not StopExecution) then
+  begin
+    if (Minima > sAtr) then
+    begin
+      BuyLimit(sAtr);
+      TakeProfit := sAtr + (Vol * Alvo);   // Ajustado para 5:1
+      StopLoss := sAtr - (Vol * Stop);     // Ajustado para 5:1
+      PrecoEntrada := sAtr;
+      Position := 1; // Posição comprada
+      HoraInicioOperacao := Time;
+    end;
 
-Fim;
+    if (Maxima < sAtr) then
+    begin
+      SellShortLimit(sAtr);
+      TakeProfit := sAtr - (Vol * Alvo);   // Ajustado para 5:1
+      StopLoss := sAtr + (Vol * Stop);     // Ajustado para 5:1
+      PrecoEntrada := sAtr;
+      Position := -1; // Posição vendida
+      HoraInicioOperacao := Time;
+    end;
+  end;
+
+  ////////////////////////////////////////
+  // GESTÃO DE POSIÇÃO
+  ////////////////////////////////////////
+  if Position <> 0 then
+  begin
+    // Verificar Stop Loss
+    if (Position = 1) and (Close <= StopLoss) then
+    begin
+      GanhoAcumulado := GanhoAcumulado + (Close - PrecoEntrada) / ValorTick;
+      ClosePosition();
+      PerdaDiariaAcumulada := PerdaDiariaAcumulada - (Vol * Stop);
+      Position := 0;
+      PerdasConsecutivas := PerdasConsecutivas + 1;
+    end;
+
+    if (Position = -1) and (Close >= StopLoss) then
+    begin
+      GanhoAcumulado := GanhoAcumulado + (PrecoEntrada - Close) / ValorTick;
+      ClosePosition();
+      PerdaDiariaAcumulada := PerdaDiariaAcumulada - (Vol * Stop);
+      Position := 0;
+      PerdasConsecutivas := PerdasConsecutivas + 1;
+    end;
+
+    // Verificar Take Profit
+    if (Position = 1) and (Close >= TakeProfit) then
+    begin
+      GanhoAcumulado := GanhoAcumulado + (Close - PrecoEntrada) / ValorTick;
+      ClosePosition();
+      Position := 0;
+    end;
+
+    if (Position = -1) and (Close <= TakeProfit) then
+    begin
+      GanhoAcumulado := GanhoAcumulado + (PrecoEntrada - Close) / ValorTick;
+      ClosePosition();
+      Position := 0;
+    end;
+
+    // Encerramento por tempo máximo
+    if (Time - HoraInicioOperacao >= TempoMaximoOperacao) then
+    begin
+      if Position = 1 then
+        GanhoAcumulado := GanhoAcumulado + (Close - PrecoEntrada) / ValorTick;
+      if Position = -1 then
+        GanhoAcumulado := GanhoAcumulado + (PrecoEntrada - Close) / ValorTick;
+
+      ClosePosition();
+      PerdaDiariaAcumulada := PerdaDiariaAcumulada - (Vol * Stop);
+      Position := 0;
+      PerdasConsecutivas := PerdasConsecutivas + 1;
+    end;
+  end;
+
+  ////////////////////////////////////////
+  // ENCERRAMENTO POR HORÁRIO
+  ////////////////////////////////////////
+  if (Time > HoraFechamento) and (Position <> 0) then
+  begin
+    if Position = 1 then
+      GanhoAcumulado := GanhoAcumulado + (Close - PrecoEntrada) / ValorTick;
+    if Position = -1 then
+      GanhoAcumulado := GanhoAcumulado + (PrecoEntrada - Close) / ValorTick;
+
+    ClosePosition();
+    Position := 0;
+  end;
+
+  ////////////////////////////////////////
+  // VERIFICAÇÃO DE PERDA DIÁRIA ACUMULADA
+  ////////////////////////////////////////
+  if (PerdaDiariaAcumulada <= -CapitalInicial * PercentualPerdaDiaria) then
+  begin
+    StopExecution := True;
+    DiasSemOperar := DiasSuspensao;
+  end;
+end.
