@@ -1,0 +1,171 @@
+///////////////////////////////////////////
+// Robô 08 - Gerenciamento de Risco
+// Estratégia baseada em rompimento e suporte/resistência com gestão de risco
+///////////////////////////////////////////
+
+const
+  Rompimento = true;                 // Ativar estratégia de rompimento
+  SuporteResistencia = false;        // Ativar estratégia de suporte/resistência
+  Periodo = 96;                      // Período para cálculo de máximas e mínimas
+  Deslocamento = 1;                  // Deslocamento dos cálculos
+  Alvo = 5.0;                        // Relação de 5 para 1 no ganho
+  Stop = 1.0;                        // Relação de 5 para 1 no stop
+  CapitalInicial = 1000;             // Capital inicial
+  PercentualPerdaDiaria = 0.02;      // Máximo de 3% de perda diária
+  DiasSuspensao = 4;                 // Dias sem operar após perdas acumuladas
+  ValorTick = 0.5;                   // Valor do tick
+  TempoMaximoOperacao = 120;         // Tempo máximo de operação em segundos (2 minutos)
+
+var
+  A, B, mMin, mMax, Topo, Fundo: Float;   // Variáveis para suporte e resistência
+  GanhoAcumulado, PerdaDiariaAcumulada, TakeProfit, StopLoss: Float;
+  DiaAtual, DiasSemOperar, Position, HoraInicioOperacao, PerdasConsecutivas: Inteiro;
+  StopExecution: Boolean;
+
+begin
+  //////////////////////////////////////////
+  // Inicialização Diária
+  //////////////////////////////////////////
+  if DiaAtual = 0 then
+  begin
+    DiaAtual := Date;
+    PerdaDiariaAcumulada := 0;
+    GanhoAcumulado := 0;
+    DiasSemOperar := 0;
+    Position := 0;
+    StopExecution := False;
+    PerdasConsecutivas := 0;
+    HoraInicioOperacao := 0;
+  end;
+
+  if DiaAtual <> Date then
+  begin
+    DiaAtual := Date;
+    PerdaDiariaAcumulada := 0;
+    PerdasConsecutivas := 0;
+    HoraInicioOperacao := 0;
+
+    if DiasSemOperar > 0 then
+    begin
+      DiasSemOperar := DiasSemOperar - 1;
+      StopExecution := True;
+    end
+    else
+      StopExecution := False;
+  end;
+
+  //////////////////////////////////////////
+  // Cálculo das Máximas e Mínimas
+  //////////////////////////////////////////
+  A := highest(high, Periodo)[Deslocamento];
+  B := lowest(low, Periodo)[Deslocamento];
+
+  // Identificar fundo
+  if (Minima > Minima[1]) and (Minima[1] <= Minima[2]) then
+    mMin := Minima[1];
+  if (B >= mMin) then
+    Fundo := mMin;
+
+  // Identificar topo
+  if (Maxima < Maxima[1]) and (Maxima[1] >= Maxima[2]) then
+    mMax := Maxima[1];
+  if (A <= mMax) then
+    Topo := mMax;
+
+  //////////////////////////////////////////
+  // Plotar Suporte e Resistência
+  //////////////////////////////////////////
+  Plot(Topo);
+  SetPlotColor(1, cllime);
+  Plot2(Fundo);
+  SetPlotColor(2, clred);
+
+  //////////////////////////////////////////
+  // Execução de Ordens - Estratégia de Rompimento
+  //////////////////////////////////////////
+  if (Rompimento) and (not SuporteResistencia) and (not StopExecution) then
+  begin
+    if (High > Topo) then
+    begin
+      BuyStop(Topo, Topo + 30);
+      TakeProfit := Topo + (Alvo * ValorTick);
+      StopLoss := Topo - (Stop * ValorTick);
+      Position := 1;
+      HoraInicioOperacao := Time;
+    end;
+
+    if (Low < Fundo) then
+    begin
+      SellShortStop(Fundo, Fundo - 30);
+      TakeProfit := Fundo - (Alvo * ValorTick);
+      StopLoss := Fundo + (Stop * ValorTick);
+      Position := -1;
+      HoraInicioOperacao := Time;
+    end;
+  end;
+
+  //////////////////////////////////////////
+  // Execução de Ordens - Suporte e Resistência
+  //////////////////////////////////////////
+  if (not Rompimento) and (SuporteResistencia) and (not StopExecution) then
+  begin
+    if (High > Topo) then
+      SellShortLimit(Topo);
+    if (Low > Fundo) then
+      BuyLimit(Fundo);
+  end;
+
+  //////////////////////////////////////////
+  // Gestão de Risco
+  //////////////////////////////////////////
+  if Position <> 0 then
+  begin
+    // Verificar Stop Loss
+    if (Position = 1) and (Close <= StopLoss) then
+    begin
+      PerdaDiariaAcumulada := PerdaDiariaAcumulada - (Stop * ValorTick);
+      ClosePosition();
+      Position := 0;
+      PerdasConsecutivas := PerdasConsecutivas + 1;
+    end;
+
+    if (Position = -1) and (Close >= StopLoss) then
+    begin
+      PerdaDiariaAcumulada := PerdaDiariaAcumulada - (Stop * ValorTick);
+      ClosePosition();
+      Position := 0;
+      PerdasConsecutivas := PerdasConsecutivas + 1;
+    end;
+
+    // Verificar Take Profit
+    if (Position = 1) and (Close >= TakeProfit) then
+    begin
+      GanhoAcumulado := GanhoAcumulado + (Close - Topo) / ValorTick;
+      ClosePosition();
+      Position := 0;
+    end;
+
+    if (Position = -1) and (Close <= TakeProfit) then
+    begin
+      GanhoAcumulado := GanhoAcumulado + (Fundo - Close) / ValorTick;
+      ClosePosition();
+      Position := 0;
+    end;
+
+    // Encerrar por tempo máximo
+    if (Time - HoraInicioOperacao >= TempoMaximoOperacao) then
+    begin
+      ClosePosition();
+      Position := 0;
+    end;
+  end;
+
+  //////////////////////////////////////////
+  // Suspensão por Perda Diária
+  //////////////////////////////////////////
+  if (PerdaDiariaAcumulada <= -CapitalInicial * PercentualPerdaDiaria) then
+  begin
+    StopExecution := True;
+    DiasSemOperar := DiasSuspensao;
+  end;
+end.
