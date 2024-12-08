@@ -1,0 +1,192 @@
+///////////////////////////////////////////
+// Robô Fibonacci Ajustado para WDOFUT com Offset e Gerenciamento de Risco
+///////////////////////////////////////////
+
+const
+  PercentualFiboC = 80;        // Nível Fibonacci para compra
+  PercentualFiboV = 40;        // Nível Fibonacci para venda
+  SaidaC = 164000;             // Horário limite para compras
+  SaidaV = 164000;             // Horário limite para vendas
+  PercentualRisco = 0.25;      // Percentual de risco permitido
+  nATR = 85;                   // Período mais curto para ATR
+  nRSI = 15;                    // Período mais curto para RSI
+  nATRII = 10;                 // Limite RSI para venda
+  nRSIII = 45;                 // Limite RSI para compra
+  LimitePerdaDiaria = -0.5;     // Limite de perda diária ajustado
+  CapitalInicial = 1000;       // Capital inicial para cálculo do risco
+  OffsetTicks = 20;            // Offset em ticks
+  ValorTick = 0.5;             // Valor de cada tick (em reais)
+  PerdaMaximaOperacao = 1;    // Perda máxima por operação (em pontos)
+  TempoMaximoOperacao = 110;   // Tempo máximo de operação (em segundos)
+  DiasSuspensao = 2;           // Dias sem operar após perdas acumuladas
+
+var
+  maxDA, minDA, vlrFiboC, vlrFiboV: Float;
+  StopLoss, TakeProfit, ATR, RSIValue, PerdaDiariaAcumulada, GanhoAcumulado: Float;
+  Capital, RiscoMaximo, LotSize, GanhoDiario, PrecoEntrada: Float;
+  trailingStopC, trailingStopV: Float;
+  TRSum, TR: Float;
+  DiaAtual, Position, PerdasConsecutivas, DiasSemOperar, HoraInicioOperacao: Integer;
+  StopExecution, PerdaAtingida, sinalC, sinalV: Boolean;
+  i: Integer;
+
+begin
+  ////////////////////////////////////////
+  // INICIALIZAÇÃO DIÁRIA
+  ////////////////////////////////////////
+  if DiaAtual = 0 then
+  begin
+    DiaAtual := Date;
+    GanhoDiario := 0;
+    PerdaDiariaAcumulada := 0;
+    GanhoAcumulado := 0;
+    DiasSemOperar := 0;
+    PerdasConsecutivas := 0;
+    Position := 0;
+    StopExecution := False;
+  end;
+
+  if DiaAtual <> Date then
+  begin
+    DiaAtual := Date;
+    GanhoDiario := 0;
+    PerdaDiariaAcumulada := 0;
+
+    if DiasSemOperar > 0 then
+    begin
+      DiasSemOperar := DiasSemOperar - 1;
+      StopExecution := True;
+    end
+    else
+    begin
+      StopExecution := False;
+    end;
+  end;
+
+  ////////////////////////////////////////
+  // CÁLCULO DOS INDICADORES
+  ////////////////////////////////////////
+  TRSum := 0;
+  for i := 1 to nATR do
+  begin
+    TR := Max(High[i] - Low[i], Abs(High[i] - Close[i - 1]));
+    TR := Max(TR, Abs(Low[i] - Close[i - 1]));
+    TRSum := TRSum + TR;
+  end;
+  ATR := TRSum / nATR;
+
+  RSIValue := RSI(nRSI, 0);
+  maxDA := HighD(1); // Máxima do dia anterior
+  minDA := LowD(1);  // Mínima do dia anterior
+  vlrFiboC := minDA + ((maxDA - minDA) * (PercentualFiboC / 100)) + (OffsetTicks * ValorTick);
+  vlrFiboV := maxDA - ((maxDA - minDA) * (PercentualFiboV / 100)) - (OffsetTicks * ValorTick);
+
+  ////////////////////////////////////////
+  // GERENCIAMENTO DE RISCO
+  ////////////////////////////////////////
+  Capital := CapitalInicial;
+  RiscoMaximo := Capital * (PercentualRisco / 100);
+  LotSize := Max(1, RiscoMaximo / ATR);
+  StopLoss := ATR * 0.3;
+  TakeProfit := ATR * 1.0;
+
+  if PerdaDiariaAcumulada <= LimitePerdaDiaria then
+  begin
+    StopExecution := True;
+    PlotText("Limite diário atingido", Close); // Vermelho
+  end;
+
+  if StopExecution then
+  begin
+    StopExecution := True; // Parar execução
+  end;
+
+  ////////////////////////////////////////
+  // SINAIS DE ENTRADA
+  ////////////////////////////////////////
+  sinalC := (Close <= vlrFiboV) and (RSIValue < nRSIII) and (Time < SaidaC);
+  sinalV := (Close >= vlrFiboC) and (RSIValue > nATRII) and (Time < SaidaV);
+
+  if sinalC and (Position = 0) then
+  begin
+    BuyAtMarket();
+    trailingStopC := Close - ATR;
+    PrecoEntrada := Close;
+    HoraInicioOperacao := Time;
+    Position := 1;
+    PlotText("Entrada Compra", Close); // Verde
+  end;
+
+  if sinalV and (Position = 0) then
+  begin
+    SellShortAtMarket();
+    trailingStopV := Close + ATR;
+    PrecoEntrada := Close;
+    HoraInicioOperacao := Time;
+    Position := -1;
+    PlotText("Entrada Venda", Close); // Vermelho
+  end;
+
+  ////////////////////////////////////////
+  // GERENCIAMENTO DE POSIÇÕES ABERTAS
+  ////////////////////////////////////////
+  if Position <> 0 then
+  begin
+    if (Position = 1) and (Close >= PrecoEntrada + TakeProfit) then
+    begin
+      ClosePosition();
+      GanhoDiario := GanhoDiario + TakeProfit;
+      Position := 0;
+      PlotText("Take Profit (Compra)", Close); // Azul
+    end;
+
+    if (Position = -1) and (Close <= PrecoEntrada - TakeProfit) then
+    begin
+      ClosePosition();
+      GanhoDiario := GanhoDiario + TakeProfit;
+      Position := 0;
+      PlotText("Take Profit (Venda)", Close); // Azul
+    end;
+
+    if (Position = 1) and (Close <= trailingStopC) then
+    begin
+      ClosePosition();
+      PerdaDiariaAcumulada := PerdaDiariaAcumulada - PerdaMaximaOperacao;
+      Position := 0;
+      PlotText("Stop Loss (Compra)", Close); // Vermelho
+    end;
+
+    if (Position = -1) and (Close >= trailingStopV) then
+    begin
+      ClosePosition();
+      PerdaDiariaAcumulada := PerdaDiariaAcumulada - PerdaMaximaOperacao;
+      Position := 0;
+      PlotText("Stop Loss (Venda)", Close); // Vermelho
+    end;
+
+    if (Time - HoraInicioOperacao >= TempoMaximoOperacao) then
+    begin
+      ClosePosition();
+      Position := 0;
+      PlotText("Encerrado por tempo máximo", Close); // Amarelo
+    end;
+  end;
+
+  if (Time >= SaidaC) and (Position <> 0) then
+  begin
+    ClosePosition();
+    Position := 0;
+    PlotText("Saída por horário", Close); // Amarelo
+  end;
+
+  ////////////////////////////////////////
+  // DEBUG E PLOTAGEM
+  ////////////////////////////////////////
+  Plot(maxDA);
+  Plot(minDA);
+  Plot(vlrFiboC);
+  Plot(vlrFiboV);
+  Plot(ATR);
+  Plot(RSIValue);
+  Plot(GanhoDiario);
+end.
