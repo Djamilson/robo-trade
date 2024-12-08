@@ -1,0 +1,191 @@
+///////////////////////////////////////////
+// Robô Fibonacci com Controle de Risco Otimizado
+///////////////////////////////////////////
+
+const
+  PercentualFiboC = 61.8;
+  PercentualFiboV = 38.2; 
+  PercentualPerdaDiaria = 0.03;   // 3% do capital inicial por dia
+  PerdaMaximaOperacao = 20;       // Perda máxima por operação em pontos
+  DiasSuspensao = 4;             // Dias sem operar após perdas acumuladas
+  nATR = 70;
+  nMediaCurta = 21;
+  nMediaLonga = 17;
+  HoraSaida = 164000;            // Formato HHMMSS
+  CapitalInicial = 1000;       // Ajuste conforme necessário
+  ValorTick = 0.5;
+  TempoMaximoOperacao = 120;     // Tempo máximo de operação em segundos (2 minutos)
+
+var
+  PerdaDiariaAcumulada, GanhoAcumulado, ATR, MediaCurta, MediaLonga: Float;
+  vlrFiboC, vlrFiboV, TakeProfit, StopLoss, PrecoEntrada: Float;
+  DiaAtual, DiasSemOperar, Position, i, PerdasConsecutivas, HoraSuspensao, HoraInicioOperacao: Integer;
+  sinalC, sinalV, StopExecution, tendenciaAlta, tendenciaBaixa: Boolean;
+
+begin
+  ////////////////////////////////////////
+  // INICIALIZAÇÃO DIÁRIA
+  ////////////////////////////////////////
+  if DiaAtual = 0 then
+  begin
+    DiaAtual := Date;
+    PerdaDiariaAcumulada := 0;
+    GanhoAcumulado := 0;
+    DiasSemOperar := 0;
+    Position := 0; // Sem posições no início
+    StopExecution := False;
+    PerdasConsecutivas := 0;
+    HoraSuspensao := 0;
+    HoraInicioOperacao := 0;
+    PrecoEntrada := 0;
+  end;
+
+  if DiaAtual <> Date then
+  begin
+    DiaAtual := Date;
+    PerdaDiariaAcumulada := 0;
+    PerdasConsecutivas := 0;
+    HoraSuspensao := 0;
+    HoraInicioOperacao := 0;
+
+    if DiasSemOperar > 0 then
+    begin
+      DiasSemOperar := DiasSemOperar - 1;
+      StopExecution := True;
+    end
+    else
+    begin
+      StopExecution := False;
+    end;
+  end;
+
+  ////////////////////////////////////////
+  // CÁLCULO DOS INDICADORES
+  ////////////////////////////////////////
+  ATR := 0;
+  for i := 0 to nATR - 1 do
+    ATR := ATR + abs(High[i] - Low[i]);
+  ATR := ATR / nATR;
+
+  MediaCurta := 0;
+  for i := 0 to nMediaCurta - 1 do
+    MediaCurta := MediaCurta + Close[i];
+  MediaCurta := MediaCurta / nMediaCurta;
+
+  MediaLonga := 0;
+  for i := 0 to nMediaLonga - 1 do
+    MediaLonga := MediaLonga + Close[i];
+  MediaLonga := MediaLonga / nMediaLonga;
+
+  tendenciaAlta := MediaCurta > MediaLonga;
+  tendenciaBaixa := MediaCurta < MediaLonga;
+
+  vlrFiboC := Low[1] + (High[1] - Low[1]) * (PercentualFiboC / 100);
+  vlrFiboV := High[1] - (High[1] - Low[1]) * (PercentualFiboV / 100);
+
+  ////////////////////////////////////////
+  // SINAIS DE ENTRADA (APENAS COM TENDÊNCIA DEFINIDA)
+  ////////////////////////////////////////
+  sinalC := (Close >= vlrFiboC) and tendenciaAlta;
+  sinalV := (Close <= vlrFiboV) and tendenciaBaixa; 
+
+  if sinalC and (Position = 0) then
+  begin
+    BuyAtMarket();
+    TakeProfit := Close + ATR;
+    StopLoss := Close - (PerdaMaximaOperacao * ValorTick); // Stop de 10 pontos
+    PrecoEntrada := Close;
+    Position := 1; // Marca posição aberta
+    HoraInicioOperacao := Time; // Marca o horário de início da operação
+    PlotText("Compra (Tendência Baixa)", Close, clBlue);
+  end;
+
+  if sinalV and (Position = 0) then
+  begin
+    SellShortAtMarket();
+    TakeProfit := Close - ATR;
+    StopLoss := Close + (PerdaMaximaOperacao * ValorTick); // Stop de 10 pontos
+    PrecoEntrada := Close;
+    Position := -1; // Marca posição aberta
+    HoraInicioOperacao := Time; // Marca o horário de início da operação
+    PlotText("Venda (Tendência Alta)", Close, clRed);
+  end;
+
+  ////////////////////////////////////////
+  // GESTÃO DE POSIÇÃO
+  ////////////////////////////////////////
+  if Position <> 0 then
+  begin
+    // Verificar se operação está em perda
+    if ((Position = 1) and (Close < PrecoEntrada)) or ((Position = -1) and (Close > PrecoEntrada)) then
+    begin
+      // Verificar tempo da operação e encerrar se ultrapassar 2 minutos
+      if (Time - HoraInicioOperacao >= TempoMaximoOperacao) then
+      begin
+        if Position = 1 then
+          GanhoAcumulado := GanhoAcumulado + (Close - PrecoEntrada) / ValorTick
+        else if Position = -1 then
+          GanhoAcumulado := GanhoAcumulado + (PrecoEntrada - Close) / ValorTick;
+
+        ClosePosition();
+        PerdaDiariaAcumulada := PerdaDiariaAcumulada - PerdaMaximaOperacao;
+        Position := 0; // Reseta posição
+        PerdasConsecutivas := PerdasConsecutivas + 1;
+        PlotText("Encerrado por tempo máximo da operação em perda", Close, clYellow);
+      end;
+    end;
+
+    // Verificar Stop Loss
+    if (Position = 1) and (Close <= StopLoss) then
+    begin
+      GanhoAcumulado := GanhoAcumulado + (Close - PrecoEntrada) / ValorTick;
+      ClosePosition();
+      PerdaDiariaAcumulada := PerdaDiariaAcumulada - PerdaMaximaOperacao;
+      Position := 0; // Reseta posição
+      PerdasConsecutivas := PerdasConsecutivas + 1;
+      PlotText("Stop Loss atingido (Compra)", Close, clRed);
+    end;
+
+    if (Position = -1) and (Close >= StopLoss) then
+    begin
+      GanhoAcumulado := GanhoAcumulado + (PrecoEntrada - Close) / ValorTick;
+      ClosePosition();
+      PerdaDiariaAcumulada := PerdaDiariaAcumulada - PerdaMaximaOperacao;
+      Position := 0; // Reseta posição
+      PerdasConsecutivas := PerdasConsecutivas + 1;
+      PlotText("Stop Loss atingido (Venda)", Close, clRed);
+    end;
+
+    // Verificar Take Profit
+    if (Position = 1) and (Close >= TakeProfit) then
+    begin
+      GanhoAcumulado := GanhoAcumulado + (Close - PrecoEntrada) / ValorTick;
+      ClosePosition();
+      Position := 0;
+      PlotText("Take Profit atingido (Compra)", Close, clGreen);
+    end;
+
+    if (Position = -1) and (Close <= TakeProfit) then
+    begin
+      GanhoAcumulado := GanhoAcumulado + (PrecoEntrada - Close) / ValorTick;
+      ClosePosition();
+      Position := 0;
+      PlotText("Take Profit atingido (Venda)", Close, clGreen);
+    end;
+  end;
+
+  ////////////////////////////////////////
+  // ENCERRAMENTO POR HORÁRIO
+  ////////////////////////////////////////
+  if (Time >= HoraSaida) and (Position <> 0) then
+  begin
+    if Position = 1 then
+      GanhoAcumulado := GanhoAcumulado + (Close - PrecoEntrada) / ValorTick;
+    if Position = -1 then
+      GanhoAcumulado := GanhoAcumulado + (PrecoEntrada - Close) / ValorTick;
+
+    ClosePosition();
+    Position := 0;
+    PlotText("Encerrado por horário", Close, clYellow);
+  end;
+end.
