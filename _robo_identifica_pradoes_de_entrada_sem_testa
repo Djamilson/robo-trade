@@ -1,0 +1,155 @@
+///////////////////////////////////////////
+// Robô para Gerenciamento de Padrão Gráfico com Regiões Verdes
+///////////////////////////////////////////
+
+const
+  Alvo = 2.0;                    // Proporção de risco-retorno
+  Stop = 1.0;                    // Stop com base no risco
+  HoraInicio = 930;              // Início das operações
+  HoraFim = 1645;                // Fim das operações (todas as posições fechadas)
+  PercentualPerdaDiaria = 0.03;  // 3% do capital inicial
+  CapitalInicial = 1000;         // Capital inicial
+  ValorTick = 0.5;               // Valor do tick
+  MinimoPontosTopoFundo = 5;     // Diferença mínima para confirmar topos/fundos
+  TamanhoZonaVerde = 10;         // Altura mínima para considerar uma região como zona verde
+
+var
+  UltimoTopo, UltimoFundo, PrecoEntrada, TakeProfit, StopLoss: Float;
+  PosicaoAtual, DiaAtual: Integer;
+  PerdaDiariaAcumulada, GanhoAcumulado: Float;
+  StopExecution: Boolean;
+  VolumeMedio, VolumeAtual: Float;
+  BufferVolatilidade: Float;
+  RegioesVerdes: Array of Record {Inicio, Fim: Integer; Altura: Float};
+
+begin
+  ////////////////////////////////////////
+  // INICIALIZAÇÃO DIÁRIA
+  ////////////////////////////////////////
+  if DiaAtual = 0 then
+  begin
+    DiaAtual := Date;
+    PerdaDiariaAcumulada := 0;
+    GanhoAcumulado := 0;
+    UltimoTopo := 0;
+    UltimoFundo := 0;
+    PosicaoAtual := 0;
+    StopExecution := False;
+    VolumeMedio := 0;
+    BufferVolatilidade := ATR(14); // Inicializa ATR com período 14
+    RegioesVerdes := [];
+  end;
+
+  if DiaAtual <> Date then
+  begin
+    DiaAtual := Date;
+    PerdaDiariaAcumulada := 0;
+    GanhoAcumulado := 0;
+    UltimoTopo := 0;
+    UltimoFundo := 0;
+    PosicaoAtual := 0;
+    StopExecution := False;
+    VolumeMedio := 0;
+    BufferVolatilidade := ATR(14);
+    RegioesVerdes := [];
+  end;
+
+  ////////////////////////////////////////
+  // ATUALIZAÇÃO DE VOLUME MÉDIO
+  ////////////////////////////////////////
+  VolumeAtual := Volume;
+  VolumeMedio := EMA(Volume, 20); // Média exponencial de 20 períodos
+
+  ////////////////////////////////////////
+  // IDENTIFICAÇÃO DE TOPO, FUNDO E ZONAS VERDES
+  ////////////////////////////////////////
+  if (High > UltimoTopo + MinimoPontosTopoFundo) then
+    UltimoTopo := High;
+
+  if (Low < UltimoFundo - MinimoPontosTopoFundo) then
+    UltimoFundo := Low;
+
+  if (UltimoTopo - UltimoFundo >= TamanhoZonaVerde) then
+  begin
+    RegioesVerdes := RegioesVerdes + [{Inicio: UltimoFundo, Fim: UltimoTopo, Altura: UltimoTopo - UltimoFundo}];
+  end;
+
+  ////////////////////////////////////////
+  // ENTRADA EM OPERAÇÕES
+  ////////////////////////////////////////
+  if (Time >= HoraInicio) and (Time <= HoraFim) and (not StopExecution) then
+  begin
+    // Entrada de venda no rompimento do padrão dentro da zona verde
+    if (Close < UltimoFundo) and (PosicaoAtual = 0) and (VolumeAtual > VolumeMedio) and (BufferVolatilidade > ATR(14)) then
+    begin
+      SellShortMarket();
+      PrecoEntrada := Close;
+      TakeProfit := PrecoEntrada - (Alvo * Stop);
+      StopLoss := PrecoEntrada + Stop;
+      PosicaoAtual := -1; // Posição vendida
+    end;
+
+    // Entrada de compra no rompimento do padrão dentro da zona verde
+    if (Close > UltimoTopo) and (PosicaoAtual = 0) and (VolumeAtual > VolumeMedio) and (BufferVolatilidade > ATR(14)) then
+    begin
+      BuyMarket();
+      PrecoEntrada := Close;
+      TakeProfit := PrecoEntrada + (Alvo * Stop);
+      StopLoss := PrecoEntrada - Stop;
+      PosicaoAtual := 1; // Posição comprada
+    end;
+  end;
+
+  ////////////////////////////////////////
+  // GESTÃO DE POSIÇÃO
+  ////////////////////////////////////////
+  if PosicaoAtual <> 0 then
+  begin
+    // Stop Loss
+    if (PosicaoAtual = 1) and (Close <= StopLoss) then
+    begin
+      ClosePosition();
+      PerdaDiariaAcumulada := PerdaDiariaAcumulada - Stop;
+      PosicaoAtual := 0;
+    end;
+
+    if (PosicaoAtual = -1) and (Close >= StopLoss) then
+    begin
+      ClosePosition();
+      PerdaDiariaAcumulada := PerdaDiariaAcumulada - Stop;
+      PosicaoAtual := 0;
+    end;
+
+    // Take Profit
+    if (PosicaoAtual = 1) and (Close >= TakeProfit) then
+    begin
+      ClosePosition();
+      GanhoAcumulado := GanhoAcumulado + Alvo;
+      PosicaoAtual := 0;
+    end;
+
+    if (PosicaoAtual = -1) and (Close <= TakeProfit) then
+    begin
+      ClosePosition();
+      GanhoAcumulado := GanhoAcumulado + Alvo;
+      PosicaoAtual := 0;
+    end;
+  end;
+
+  ////////////////////////////////////////
+  // VERIFICAÇÃO DE PERDA DIÁRIA
+  ////////////////////////////////////////
+  if PerdaDiariaAcumulada <= -CapitalInicial * PercentualPerdaDiaria then
+  begin
+    StopExecution := True;
+  end;
+
+  ////////////////////////////////////////
+  // FECHAMENTO FORÇADO ÀS 16H45
+  ////////////////////////////////////////
+  if (Time >= 1645) and (PosicaoAtual <> 0) then
+  begin
+    ClosePosition();
+    PosicaoAtual := 0;
+  end;
+end.
