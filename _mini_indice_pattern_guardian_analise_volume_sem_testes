@@ -1,0 +1,137 @@
+///////////////////////////////////////////
+// Robô para Gerenciamento de Padrão Gráfico
+///////////////////////////////////////////
+
+const
+  Alvo = 2.0;                    // Proporção de risco-retorno
+  Stop = 1.0;                    // Stop com base no risco
+  HoraInicio = 930;              // Início das operações
+  HoraFim = 1700;                // Fim das operações
+  PercentualPerdaDiaria = 0.03;  // 3% do capital inicial
+  CapitalInicial = 1000;         // Capital inicial
+  ValorTick = 0.5;               // Valor do tick
+  MinimoPontosTopoFundo = 5;     // Diferença mínima para confirmar topos/fundos
+
+var
+  UltimoTopo, UltimoFundo, PrecoEntrada, TakeProfit, StopLoss: Float;
+  PosicaoAtual, DiaAtual: Integer;
+  PerdaDiariaAcumulada, GanhoAcumulado: Float;
+  StopExecution: Boolean;
+  VolumeMedio, VolumeAtual: Float;
+  BufferVolatilidade: Float;
+
+begin
+  ////////////////////////////////////////
+  // INICIALIZAÇÃO DIÁRIA
+  ////////////////////////////////////////
+  if DiaAtual = 0 then
+  begin
+    DiaAtual := Date;
+    PerdaDiariaAcumulada := 0;
+    GanhoAcumulado := 0;
+    UltimoTopo := 0;
+    UltimoFundo := 0;
+    PosicaoAtual := 0;
+    StopExecution := False;
+    VolumeMedio := 0;
+    BufferVolatilidade := ATR(14); // Inicializa ATR com período 14
+  end;
+
+  if DiaAtual <> Date then
+  begin
+    DiaAtual := Date;
+    PerdaDiariaAcumulada := 0;
+    GanhoAcumulado := 0;
+    UltimoTopo := 0;
+    UltimoFundo := 0;
+    PosicaoAtual := 0;
+    StopExecution := False;
+    VolumeMedio := 0;
+    BufferVolatilidade := ATR(14);
+  end;
+
+  ////////////////////////////////////////
+  // ATUALIZAÇÃO DE VOLUME MÉDIO
+  ////////////////////////////////////////
+  VolumeAtual := Volume;
+  VolumeMedio := EMA(Volume, 20); // Média exponencial de 20 períodos
+
+  ////////////////////////////////////////
+  // IDENTIFICAÇÃO DE TOPO E FUNDO
+  ////////////////////////////////////////
+  if (High > UltimoTopo + MinimoPontosTopoFundo) then
+    UltimoTopo := High;
+
+  if (Low < UltimoFundo - MinimoPontosTopoFundo) then
+    UltimoFundo := Low;
+
+  ////////////////////////////////////////
+  // ENTRADA EM OPERAÇÕES
+  ////////////////////////////////////////
+  if (Time >= HoraInicio) and (Time <= HoraFim) and (not StopExecution) then
+  begin
+    // Entrada de venda no rompimento do padrão
+    if (Close < UltimoFundo) and (PosicaoAtual = 0) and (VolumeAtual > VolumeMedio) and (BufferVolatilidade > ATR(14)) then
+    begin
+      SellShortMarket();
+      PrecoEntrada := Close;
+      TakeProfit := PrecoEntrada - (Alvo * Stop);
+      StopLoss := PrecoEntrada + Stop;
+      PosicaoAtual := -1; // Posição vendida
+    end;
+
+    // Entrada de compra no rompimento do padrão
+    if (Close > UltimoTopo) and (PosicaoAtual = 0) and (VolumeAtual > VolumeMedio) and (BufferVolatilidade > ATR(14)) then
+    begin
+      BuyMarket();
+      PrecoEntrada := Close;
+      TakeProfit := PrecoEntrada + (Alvo * Stop);
+      StopLoss := PrecoEntrada - Stop;
+      PosicaoAtual := 1; // Posição comprada
+    end;
+  end;
+
+  ////////////////////////////////////////
+  // GESTÃO DE POSIÇÃO
+  ////////////////////////////////////////
+  if PosicaoAtual <> 0 then
+  begin
+    // Stop Loss
+    if (PosicaoAtual = 1) and (Close <= StopLoss) then
+    begin
+      ClosePosition();
+      PerdaDiariaAcumulada := PerdaDiariaAcumulada - Stop;
+      PosicaoAtual := 0;
+    end;
+
+    if (PosicaoAtual = -1) and (Close >= StopLoss) then
+    begin
+      ClosePosition();
+      PerdaDiariaAcumulada := PerdaDiariaAcumulada - Stop;
+      PosicaoAtual := 0;
+    end;
+
+    // Take Profit
+    if (PosicaoAtual = 1) and (Close >= TakeProfit) then
+    begin
+      ClosePosition();
+      GanhoAcumulado := GanhoAcumulado + Alvo;
+      PosicaoAtual := 0;
+    end;
+
+    if (PosicaoAtual = -1) and (Close <= TakeProfit) then
+    begin
+      ClosePosition();
+      GanhoAcumulado := GanhoAcumulado + Alvo;
+      PosicaoAtual := 0;
+    end;
+  end;
+
+  ////////////////////////////////////////
+  // VERIFICAÇÃO DE PERDA DIÁRIA
+  ////////////////////////////////////////
+  if PerdaDiariaAcumulada <= -CapitalInicial * PercentualPerdaDiaria then
+  begin
+    StopExecution := True;
+  end;
+end.
