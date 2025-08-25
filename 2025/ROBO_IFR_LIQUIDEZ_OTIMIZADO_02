@@ -1,0 +1,355 @@
+///////////////////////////////////////////////////////////
+//            ROBO_IFR_LIQUIDEZ_OTIMIZADO v2             //
+///////////////////////////////////////////////////////////
+// Padrões suportados (entradas seguras):
+// 1) Fakeout de RESISTÊNCIA: rompe acima (pega liquidez) e FECHA abaixo
+// 2) Spring de SUPORTE: rompe abaixo (pega liquidez) e FECHA acima
+// Regras de segurança:
+// - Zona válida = range com toques (máx/mín "iguais" pela tolerância)
+// - Confirmação: fechamento volta pro range em até N barras
+// - IFR filtra (sobrecomprado/sobrevendido)
+// - Stop com buffer de ATR/Ticks, alvo por RR ou no outro lado do range
+// - Risco por trade em % do capital e controles de perda diária / consecutivas
+///////////////////////////////////////////////////////////
+
+const
+  // ===== ZONAS DE LIQUIDEZ / RANGE =====
+  LookbackZonas            = 200;   // janelas para procurar topos/fundos
+  TicksToleranciaNivel     = 2;     // distância p/ considerar "iguais"
+  ToquesMinimosNivel       = 2;     // nº mínimo de toques em um nível
+  MinLarguraRangeTicks     = 6;     // largura mínima do range (em ticks)
+  ConfirmacaoMaxBarras     = 3;     // máx. barras para fechar de volta no range
+
+  // ===== CONFIRMAÇÃO TÉCNICA =====
+  PeriodoRSI               = 9;
+  IFR_Compra               = 35;    // abaixo disso favorece compra
+  IFR_Venda                = 65;    // acima disso favorece venda
+  PeriodoATR               = 14;
+
+  // ===== RISCO / SAÍDAS =====
+  RiscoPorTradePercent     = 0.6;   // % do capital arriscada por trade
+  RR_Alvo                  = 2.0;   // relação risco/retorno
+  SL_Buffer_ATR_Fator      = 0.6;   // fração do ATR usada como buffer
+  SL_Buffer_TicksExtra     = 2;     // ticks extras no stop além do ATR
+  TakeProfitNoOutroNivel   = False; // se True, usa alvo no outro lado do range
+
+  // ===== RISCO DIÁRIO / SESSÃO =====
+  PercentualPerdaDiaria    = 1.1;   // perda diária máxima (% do capital)
+  MaxPerdasConsecutivas    = 3;     // pausa após X stops seguidos
+  DiasSuspensao            = 2;     // dias sem operar após stop diário
+  CooldownBarras           = 5;     // barras de espera após fechar trade
+  TempoMaximoOperacaoSeg   = 90;    // tempo máximo no trade (segundos)
+  HoraEntradaInicial       = 093000;
+  HoraEntradaFinal         = 170000;
+  HoraSaidaForcada         = 164000;
+
+  // ===== FINANCEIRO =====
+  CapitalInicial           = 1000.0;
+  TickSize                 = 0.5;   // tamanho do tick (pontos)
+  ValorTick                = 0.5;   // R$ por tick
+
+var
+  // ===== Estado Diário =====
+  DiaAtual, DiasSemOperar, PerdasConsecutivas : Integer;
+  PerdaDiariaAcumulada, CapitalAtual          : Float;
+  StopExecution                               : Boolean;
+
+  // ===== Estado Operacional =====
+  Position, Lotes, HoraInicioOperacao, CooldownRestante : Integer;
+  PrecoEntrada, StopLoss, TakeProfit, UltimoTradePL     : Float;
+
+  // ===== Zonas =====
+  TemZonas, TemResistencia, TemSuporte : Boolean;
+  Resistencia, Suporte                  : Float;
+
+///////////////////////////////////////////////////////////
+// -------------------- Funções ------------------------ //
+///////////////////////////////////////////////////////////
+
+function ValorPorPonto: Float;
+begin
+  Result := ValorTick / TickSize; // R$ por ponto
+end;
+
+function Toler: Float;
+begin
+  Result := TicksToleranciaNivel * TickSize;
+end;
+
+function ContaToquesNivel(nivel: Float; lookback: Integer): Integer;
+var i, t: Integer; tol: Float;
+begin
+  t := 0; tol := Toler();
+  for i := 1 to lookback do
+  begin
+    if Abs(High[i] - nivel) <= tol then t := t + 1
+    else if Abs(Low[i] - nivel) <= tol then t := t + 1;
+  end;
+  Result := t;
+end;
+
+// Detecta RESISTÊNCIA (máximas "iguais") e SUPORTE (mínimas "iguais") no lookback
+function DetectaZonas(out r, s: Float): Boolean;
+var
+  h, l, largura: Float; tr, ts: Integer;
+begin
+  h := HHV(High, LookbackZonas);
+  l := LLV(Low,  LookbackZonas);
+
+  // "snap" pro grid do tick
+  r := Round(h / TickSize) * TickSize;
+  s := Round(l / TickSize) * TickSize;
+
+  tr := ContaToquesNivel(r, LookbackZonas);
+  ts := ContaToquesNivel(s, LookbackZonas);
+
+  largura := r - s;
+
+  TemResistencia := (tr >= ToquesMinimosNivel);
+  TemSuporte     := (ts >= ToquesMinimosNivel);
+  Result         := TemResistencia and TemSuporte and (largura >= (MinLarguraRangeTicks * TickSize));
+end;
+
+// Verifica FAKEOUT acima da resistência
+function RompeAcimaEFechaAbaixo(nivel: Float): Boolean;
+begin
+  Result := (High[0] > nivel + Toler()) and (Close[0] < nivel);
+end;
+
+// Verifica SPRING abaixo do suporte
+function RompeAbaixoEFechaAcima(nivel: Float): Boolean;
+begin
+  Result := (Low[0] < nivel - Toler()) and (Close[0] > nivel);
+end;
+
+// Confirma que o fechamento voltou pro range em até N barras após o rompimento
+function ConfirmacaoRetornoAoRange(nivelTopo, nivelFundo: Float; maxBarras: Integer): Boolean;
+var i: Integer;
+begin
+  Result := False;
+  for i := 0 to maxBarras-1 do
+  begin
+    // candle i = atual, 1 = anterior, etc.
+    if (Close[i] > nivelFundo) and (Close[i] < nivelTopo) then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+// Cálculo de lote pelo risco monetário desejado
+function CalculaLotes(precoEnt, precoSL: Float): Integer;
+var
+  riscoMonetario, riscoPorContratoR$ : Float;
+begin
+  riscoMonetario     := (RiscoPorTradePercent / 100.0) * CapitalAtual;
+  riscoPorContratoR$ := Abs(precoEnt - precoSL) * ValorPorPonto;
+  if riscoPorContratoR$ <= 0 then
+    Result := 0
+  else
+    Result := Max(1, Floor(riscoMonetario / riscoPorContratoR$));
+end;
+
+// Define SL e TP para compra/venda
+procedure DefineSLTP(direcao: Integer; nivelRef: Float; out SL, TP: Float);
+var
+  atr, buffer, risco: Float;
+begin
+  atr    := ATR(PeriodoATR);
+  buffer := Max(SL_Buffer_ATR_Fator * atr, SL_Buffer_TicksExtra * TickSize);
+
+  if direcao > 0 then
+  begin // COMPRA
+    SL := Min(nivelRef, Close) - buffer;
+    if TakeProfitNoOutroNivel then
+      TP := Resistencia
+    else
+    begin
+      risco := Close - SL;
+      TP    := Close + RR_Alvo * risco;
+    end;
+  end
+  else
+  begin // VENDA
+    SL := Max(nivelRef, Close) + buffer;
+    if TakeProfitNoOutroNivel then
+      TP := Suporte
+    else
+    begin
+      risco := SL - Close;
+      TP    := Close - RR_Alvo * risco;
+    end;
+  end;
+end;
+
+///////////////////////////////////////////////////////////
+// -------------------- ROTINA MAIN -------------------- //
+///////////////////////////////////////////////////////////
+begin
+  // ===== Inicialização =====
+  if DiaAtual = 0 then
+  begin
+    DiaAtual              := Date;
+    DiasSemOperar         := 0;
+    PerdasConsecutivas    := 0;
+    PerdaDiariaAcumulada  := 0;
+    StopExecution         := False;
+    Position              := 0;
+    CooldownRestante      := 0;
+    CapitalAtual          := CapitalInicial;
+    PlotText("ROBO_IFR_LIQUIDEZ_OTIMIZADO v2 iniciado", Close, clYellow);
+  end;
+
+  // ===== Troca de dia =====
+  if DiaAtual <> Date then
+  begin
+    DiaAtual             := Date;
+    PerdaDiariaAcumulada := 0;
+    PerdasConsecutivas   := 0;
+
+    if DiasSemOperar > 0 then
+    begin
+      DiasSemOperar := DiasSemOperar - 1;
+      StopExecution := True;
+    end
+    else
+      StopExecution := False;
+  end;
+
+  // ===== Bloqueios gerais =====
+  if PerdaDiariaAcumulada <= -(CapitalAtual * (PercentualPerdaDiaria / 100.0)) then
+    StopExecution := True;
+
+  if PerdasConsecutivas >= MaxPerdasConsecutivas then
+    StopExecution := True;
+
+  if (Time < HoraEntradaInicial) or (Time > HoraEntradaFinal) then
+    StopExecution := True;
+
+  // ===== Cooldown após trade =====
+  if CooldownRestante > 0 then
+    CooldownRestante := CooldownRestante - 1;
+
+  // ===== Detecta zonas de liquidez =====
+  TemZonas := DetectaZonas(Resistencia, Suporte);
+
+  // ===== ENTRADAS =====
+  if (not StopExecution) and (CooldownRestante = 0) and (Position = 0) and TemZonas then
+  begin
+    // -------- Sinal de VENDA (fakeout resistência) --------
+    if RompeAcimaEFechaAbaixo(Resistencia)
+       and ConfirmacaoRetornoAoRange(Resistencia, Suporte, ConfirmacaoMaxBarras)
+       and (RSI(PeriodoRSI, 0) > IFR_Venda) then
+    begin
+      // SL/TP
+      DefineSLTP(-1, Resistencia, StopLoss, TakeProfit);
+      // Lote por risco
+      Lotes := CalculaLotes(Close, StopLoss);
+      if Lotes > 0 then
+      begin
+        SellShortAtMarket(Lotes);
+        PrecoEntrada       := Close;
+        HoraInicioOperacao := Time;
+        Position           := -1;
+        PlotText("VENDA | Fakeout Resistência (validação + IFR)", Close, clGreen);
+      end;
+    end;
+
+    // -------- Sinal de COMPRA (spring suporte) --------
+    if RompeAbaixoEFechaAcima(Suporte)
+       and ConfirmacaoRetornoAoRange(Resistencia, Suporte, ConfirmacaoMaxBarras)
+       and (RSI(PeriodoRSI, 0) < IFR_Compra) then
+    begin
+      DefineSLTP(+1, Suporte, StopLoss, TakeProfit);
+      Lotes := CalculaLotes(Close, StopLoss);
+      if Lotes > 0 then
+      begin
+        BuyAtMarket(Lotes);
+        PrecoEntrada       := Close;
+        HoraInicioOperacao := Time;
+        Position           := 1;
+        PlotText("COMPRA | Spring Suporte (validação + IFR)", Close, clBlue);
+      end;
+    end;
+  end;
+
+  // ===== GESTÃO =====
+  if Position <> 0 then
+  begin
+    // Take Profit
+    if (Position = 1) and (High >= TakeProfit) then
+    begin
+      ClosePosition();
+      UltimoTradePL        := (TakeProfit - PrecoEntrada) * ValorPorPonto * Lotes;
+      CapitalAtual         := CapitalAtual + UltimoTradePL;
+      Position             := 0; CooldownRestante := CooldownBarras;
+      PerdasConsecutivas   := 0;
+      PlotText("TP Compra", Close, clGreen);
+    end
+    else if (Position = -1) and (Low <= TakeProfit) then
+    begin
+      ClosePosition();
+      UltimoTradePL        := (PrecoEntrada - TakeProfit) * ValorPorPonto * Lotes;
+      CapitalAtual         := CapitalAtual + UltimoTradePL;
+      Position             := 0; CooldownRestante := CooldownBarras;
+      PerdasConsecutivas   := 0;
+      PlotText("TP Venda", Close, clGreen);
+    end;
+
+    // Stop Loss
+    if (Position = 1) and (Low <= StopLoss) then
+    begin
+      ClosePosition();
+      UltimoTradePL        := (StopLoss - PrecoEntrada) * ValorPorPonto * Lotes;
+      CapitalAtual         := CapitalAtual - Abs(UltimoTradePL);
+      PerdaDiariaAcumulada := PerdaDiariaAcumulada - Abs((PrecoEntrada - StopLoss));
+      Position             := 0; CooldownRestante := CooldownBarras;
+      PerdasConsecutivas   := PerdasConsecutivas + 1;
+      PlotText("SL Compra", Close, clRed);
+    end
+    else if (Position = -1) and (High >= StopLoss) then
+    begin
+      ClosePosition();
+      UltimoTradePL        := (StopLoss - PrecoEntrada) * ValorPorPonto * Lotes;
+      CapitalAtual         := CapitalAtual - Abs(UltimoTradePL);
+      PerdaDiariaAcumulada := PerdaDiariaAcumulada - Abs((StopLoss - PrecoEntrada));
+      Position             := 0; CooldownRestante := CooldownBarras;
+      PerdasConsecutivas   := PerdasConsecutivas + 1;
+      PlotText("SL Venda", Close, clRed);
+    end;
+
+    // Encerramento por tempo
+    if (Time - HoraInicioOperacao >= TempoMaximoOperacaoSeg) then
+    begin
+      ClosePosition();
+      // Resultado mark-to-market em Close
+      if Position = 1 then
+        UltimoTradePL := (Close - PrecoEntrada) * ValorPorPonto * Lotes
+      else
+        UltimoTradePL := (PrecoEntrada - Close) * ValorPorPonto * Lotes;
+
+      CapitalAtual := CapitalAtual + UltimoTradePL;
+      Position     := 0; CooldownRestante := CooldownBarras;
+      PlotText("Encerrado por tempo", Close, clYellow);
+    end;
+  end;
+
+  // ===== Saída forçada por horário =====
+  if (Time >= HoraSaidaForcada) and (Position <> 0) then
+  begin
+    ClosePosition();
+    if Position = 1 then
+      UltimoTradePL := (Close - PrecoEntrada) * ValorPorPonto * Lotes
+    else
+      UltimoTradePL := (PrecoEntrada - Close) * ValorPorPonto * Lotes;
+
+    CapitalAtual := CapitalAtual + UltimoTradePL;
+    Position     := 0; CooldownRestante := CooldownBarras;
+    PlotText("Encerrado por horário", Close, clYellow);
+  end;
+
+  // Mensagens de bloqueio
+  if StopExecution then
+    PlotText("Operações suspensas (risk rules)", Close, clRed);
+end.
