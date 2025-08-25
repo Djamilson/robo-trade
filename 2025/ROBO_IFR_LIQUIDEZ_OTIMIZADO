@@ -1,0 +1,327 @@
+///////////////////////////////////////////////////////////
+//            ROBO_IFR_LIQUIDEZ_OTIMIZADO                //
+///////////////////////////////////////////////////////////
+//
+// Estratégia:
+// 1) Detecta zonas de liquidez (resistência/suporte) com
+//    toques múltiplos próximos (máximas/minimas iguais).
+// 2) Entra somente quando houver ROMPIMENTO FALSO
+//    (liquidity grab) confirmado pelo IFR:
+//      - Rompe acima da resistência e FECHA abaixo => Venda
+//      - Rompe abaixo do suporte e FECHA acima => Compra
+// 3) IFR (RSI) é usado como CONFIRMAÇÃO de exaustão:
+//      - Venda somente com IFR > IFR_Venda
+//      - Compra somente com IFR < IFR_Compra
+// 4) Gestão de risco: stop, alvo, perda diária e suspensão.
+//
+// Observações:
+// - Funções e nomes seguem o estilo de plataformas Pascal-like
+//   (Nelogica/Profit e similares). Adeque nomes se necessário.
+// - ValorTick/TickSize: utilizados para tolerância e buffers.
+// - “HHV/LLV/RSI” presumem funções nativas; adapte se preciso.
+//
+///////////////////////////////////////////////////////////
+
+const
+  // ======= Parâmetros de Confirmação (IFR) =======
+  IFR_Compra              = 35;     // IFR para condição de compra
+  IFR_Venda               = 65;     // IFR para condição de venda
+
+  // ======= Parâmetros de Liquidez =======
+  LookbackBarras          = 200;    // Janela para buscar zonas (barras)
+  TicksToleranciaNivel    = 2;      // Tolerância (toques "iguais")
+  ToquesMinimosNivel      = 2;      // Nº mínimo de toques para validar zona
+  SL_Buffer_Ticks         = 3;      // Espaço além do nível para o Stop
+  RR_Alvo                 = 2.0;    // Relação risco/retorno (alvo = RR * risco)
+
+  // ======= Risco/Tempo/Suspensão =======
+  PercentualPerdaDiaria   = 1.1;    // Perda diária máx (% do capital)
+  PerdaMaximaOperacaoPts  = 5.4;    // Perda máx por operação (em pontos)
+  DiasSuspensao           = 2;      // Dias sem operar após stop diário
+  TempoMaximoOperacaoSeg  = 51;     // Tempo máximo por trade (segundos)
+  HoraSaida               = 164000; // Fechar operações após HHMMSS
+
+  // ======= Financeiro =======
+  CapitalInicial          = 1000;   // Capital base
+  ValorTick               = 0.5;    // Valor do tick (R$ por tick)
+  TickSize                = 0.5;    // Tamanho do tick (em pontos do ativo)
+
+var
+  // ======= Estado de Risco/Diário =======
+  PerdaDiariaAcumulada    : Float;
+  DiaAtual, DiasSemOperar : Integer;
+  StopExecution           : Boolean;
+
+  // ======= Estado da Operação =======
+  Position                : Integer;   // 0 = flat | 1 = comprado | -1 = vendido
+  PrecoEntrada, StopLoss, TakeProfit   : Float;
+  HoraInicioOperacao      : Integer;
+  PerdasConsecutivas      : Integer;
+
+  // ======= Níveis de Liquidez Detectados =======
+  Resistencia, Suporte    : Float;
+  NiveisValidos           : Boolean;
+
+///////////////////////////////////////////////////////////
+// ------------- Funções Auxiliares -------------------- //
+///////////////////////////////////////////////////////////
+
+function ContaToquesProximosNivel(seriesHigh, seriesLow: string; nivel: Float; tolerTicks: Integer; lookback: Integer): Integer;
+var
+  i, toques: Integer;
+  toler: Float;
+begin
+  toques := 0;
+  toler  := tolerTicks * TickSize;
+
+  for i := 1 to lookback do
+  begin
+    // Toque por máxima próxima do nível
+    if Abs(High[i] - nivel) <= toler then
+      toques := toques + 1
+    // Toque por mínima próxima do nível
+    else if Abs(Low[i] - nivel) <= toler then
+      toques := toques + 1;
+  end;
+
+  Result := toques;
+end;
+
+// Busca uma resistência "plana" (máximas iguais) na janela
+function DetectaResistencia(out nivel: Float): Boolean;
+var
+  hhv, candidato: Float;
+  toques: Integer;
+begin
+  // Baseia-se no HHV das últimas LookbackBarras
+  hhv       := HHV(High, LookbackBarras);
+  // Normaliza para o grid de ticks
+  candidato := Round(hhv / TickSize) * TickSize;
+
+  toques := ContaToquesProximosNivel('H','L', candidato, TicksToleranciaNivel, LookbackBarras);
+  if toques >= ToquesMinimosNivel then
+  begin
+    nivel  := candidato;
+    Result := True;
+  end
+  else
+    Result := False;
+end;
+
+// Busca um suporte "plano" (mínimas iguais) na janela
+function DetectaSuporte(out nivel: Float): Boolean;
+var
+  llv, candidato: Float;
+  toques: Integer;
+begin
+  llv       := LLV(Low, LookbackBarras);
+  candidato := Round(llv / TickSize) * TickSize;
+
+  toques := ContaToquesProximosNivel('H','L', candidato, TicksToleranciaNivel, LookbackBarras);
+  if toques >= ToquesMinimosNivel then
+  begin
+    nivel  := candidato;
+    Result := True;
+  end
+  else
+    Result := False;
+end;
+
+// Verifica rompimento falso ACIMA da resistência (armadilha de compra)
+// Condição: High rompe acima do nível mas o FECHAMENTO volta abaixo do nível
+function EhFalsoRompimentoAlta(nivel: Float): Boolean;
+begin
+  Result := (High[0] > (nivel + TicksToleranciaNivel * TickSize)) and (Close[0] < nivel);
+end;
+
+// Verifica rompimento falso ABAIXO do suporte (armadilha de venda)
+// Condição: Low rompe abaixo do nível mas o FECHAMENTO volta acima do nível
+function EhFalsoRompimentoBaixa(nivel: Float): Boolean;
+begin
+  Result := (Low[0] < (nivel - TicksToleranciaNivel * TickSize)) and (Close[0] > nivel);
+end;
+
+// Calcula risco em pontos e retorna alvo por RR
+function CalculaAlvoPorRR(precoEntrada, precoStop: Float; direcao: Integer; rr: Float): Float;
+var
+  risco: Float;
+begin
+  risco := Abs(precoEntrada - precoStop);
+  if direcao > 0 then
+    Result := precoEntrada + rr * risco
+  else
+    Result := precoEntrada - rr * risco;
+end;
+
+///////////////////////////////////////////////////////////
+// --------------------- MAIN -------------------------- //
+///////////////////////////////////////////////////////////
+begin
+  // ======= Inicialização diária =======
+  if DiaAtual = 0 then
+  begin
+    DiaAtual               := Date;
+    PerdaDiariaAcumulada   := 0;
+    DiasSemOperar          := 0;
+    Position               := 0;
+    StopExecution          := False;
+    PerdasConsecutivas     := 0;
+    PrecoEntrada           := 0;
+    PlotText("ROBO_IFR_LIQUIDEZ_OTIMIZADO INICIADO", Close, clYellow);
+  end;
+
+  if DiaAtual <> Date then
+  begin
+    DiaAtual             := Date;
+    PerdaDiariaAcumulada := 0;
+    PerdasConsecutivas   := 0;
+
+    if DiasSemOperar > 0 then
+    begin
+      DiasSemOperar := DiasSemOperar - 1;
+      StopExecution := True;
+    end
+    else
+      StopExecution := False;
+  end;
+
+  // ======= Stop por perda diária =======
+  if PerdaDiariaAcumulada <= -(CapitalInicial * (PercentualPerdaDiaria / 100.0)) then
+  begin
+    StopExecution := True;
+    PlotText("Operações bloqueadas por perda diária!", Close, clRed);
+  end;
+
+  // ======= Busca das zonas de liquidez =======
+  NiveisValidos := DetectaResistencia(Resistencia) and DetectaSuporte(Suporte);
+
+  if StopExecution then
+  begin
+    PlotText("Operações suspensas", Close, clRed);
+  end
+  else
+  begin
+    ///////////////////////////////////////////////////////
+    // ---------------- SINAIS DE ENTRADA --------------- //
+    ///////////////////////////////////////////////////////
+    if (Position = 0) and NiveisValidos then
+    begin
+      // ======= VENDA: falso rompimento de resistência + IFR alto
+      if EhFalsoRompimentoAlta(Resistencia) and (RSI(9, 0) > IFR_Venda) then
+      begin
+        SellShortAtMarket();
+        PrecoEntrada        := Close;
+        StopLoss            := Resistencia + SL_Buffer_Ticks * TickSize;
+
+        // Alvo por RR OU por suporte (use uma das linhas abaixo)
+        // TakeProfit := Suporte; // alvo direto no suporte
+        TakeProfit          := CalculaAlvoPorRR(PrecoEntrada, StopLoss, -1, RR_Alvo);
+
+        HoraInicioOperacao  := Time;
+        Position            := -1;
+        PlotText("VENDA: falso rompimento da resistência + IFR", Close, clGreen);
+      end;
+
+      // ======= COMPRA: falso rompimento de suporte + IFR baixo
+      if EhFalsoRompimentoBaixa(Suporte) and (RSI(9, 0) < IFR_Compra) then
+      begin
+        BuyAtMarket();
+        PrecoEntrada        := Close;
+        StopLoss            := Suporte - SL_Buffer_Ticks * TickSize;
+
+        // Alvo por RR OU por resistência (use uma das linhas abaixo)
+        // TakeProfit := Resistencia; // alvo direto na resistência
+        TakeProfit          := CalculaAlvoPorRR(PrecoEntrada, StopLoss, +1, RR_Alvo);
+
+        HoraInicioOperacao  := Time;
+        Position            := 1;
+        PlotText("COMPRA: falso rompimento do suporte + IFR", Close, clBlue);
+      end;
+
+      // ======= (fallback) Entradas por IFR puro se desejar manter =======
+      // Descomente se quiser que o robô opere mesmo sem nível válido.
+      {
+      if RSI(9, 0) < IFR_Compra then
+      begin
+        BuyAtMarket();
+        PrecoEntrada       := Close;
+        StopLoss           := Close - (PerdaMaximaOperacaoPts);
+        TakeProfit         := PrecoEntrada + RR_Alvo * (PrecoEntrada - StopLoss);
+        HoraInicioOperacao := Time;
+        Position           := 1;
+        PlotText("COMPRA (IFR puro)", Close, clBlue);
+      end;
+
+      if RSI(9, 0) > IFR_Venda then
+      begin
+        SellShortAtMarket();
+        PrecoEntrada       := Close;
+        StopLoss           := Close + (PerdaMaximaOperacaoPts);
+        TakeProfit         := PrecoEntrada - RR_Alvo * (StopLoss - PrecoEntrada);
+        HoraInicioOperacao := Time;
+        Position           := -1;
+        PlotText("VENDA (IFR puro)", Close, clGreen);
+      end;
+      }
+    end;
+
+    ///////////////////////////////////////////////////////
+    // --------------- GESTÃO DE POSIÇÕES -------------- //
+    ///////////////////////////////////////////////////////
+    if Position <> 0 then
+    begin
+      // ---- Take Profit
+      if (Position = 1) and (Close >= TakeProfit) then
+      begin
+        ClosePosition();
+        Position := 0;
+        PlotText("Take Profit (Compra)", Close, clGreen);
+      end;
+
+      if (Position = -1) and (Close <= TakeProfit) then
+      begin
+        ClosePosition();
+        Position := 0;
+        PlotText("Take Profit (Venda)", Close, clGreen);
+      end;
+
+      // ---- Stop Loss
+      if (Position = 1) and (Close <= StopLoss) then
+      begin
+        ClosePosition();
+        PerdaDiariaAcumulada := PerdaDiariaAcumulada - PerdaMaximaOperacaoPts;
+        Position := 0;
+        PerdasConsecutivas := PerdasConsecutivas + 1;
+        PlotText("Stop Loss (Compra)", Close, clRed);
+      end;
+
+      if (Position = -1) and (Close >= StopLoss) then
+      begin
+        ClosePosition();
+        PerdaDiariaAcumulada := PerdaDiariaAcumulada - PerdaMaximaOperacaoPts;
+        Position := 0;
+        PerdasConsecutivas := PerdasConsecutivas + 1;
+        PlotText("Stop Loss (Venda)", Close, clRed);
+      end;
+
+      // ---- Encerrar por tempo máximo de operação
+      if (Time - HoraInicioOperacao >= TempoMaximoOperacaoSeg) then
+      begin
+        ClosePosition();
+        Position := 0;
+        PerdasConsecutivas := PerdasConsecutivas + 1;
+        PlotText("Encerrado por tempo máximo", Close, clYellow);
+      end;
+    end;
+
+    ///////////////////////////////////////////////////////
+    // --------------- ENCERRAMENTO POR HORA ------------ //
+    ///////////////////////////////////////////////////////
+    if (Time >= HoraSaida) and (Position <> 0) then
+    begin
+      ClosePosition();
+      Position := 0;
+      PlotText("Encerrado por horário", Close, clYellow);
+    end;
+  end;
+end.
