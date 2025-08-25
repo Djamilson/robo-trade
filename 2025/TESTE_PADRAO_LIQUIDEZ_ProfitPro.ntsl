@@ -1,0 +1,109 @@
+// =======================================================
+//  TESTE_PADRAO_LIQUIDEZ_ProfitPro.ntsl
+//  Indicador visual de validação do padrão de liquidez
+// =======================================================
+
+inputs:
+  LookbackZonas(200),
+  TicksToleranciaNivel(2),
+  ToquesMinimosNivel(2),
+  MinLarguraRangeTicks(6),
+  ConfirmacaoMaxBarras(3),
+  PeriodoRSI(9),
+  IFR_Compra(35),
+  IFR_Venda(65),
+  TickSizeParam(0.5);
+
+vars:
+  Resistencia(0.0), Suporte(0.0),
+  TemResistencia(False), TemSuporte(False),
+  r(0.0), s(0.0);
+
+method Toler: float begin
+  Toler := TicksToleranciaNivel * TickSizeParam;
+end;
+
+method ContaToquesNivel(nivel: float; lookback: integer): integer;
+var i, t: integer; tol: float;
+begin
+  t := 0; tol := Toler();
+  for i := 1 to lookback begin
+    if Abs(High[i] - nivel) <= tol then t := t + 1
+    else if Abs(Low[i] - nivel) <= tol then t := t + 1;
+  end;
+  ContaToquesNivel := t;
+end;
+
+method DetectaZonas(var rr, ss: float): boolean;
+var h, l, largura: float; tr, ts: integer;
+begin
+  h := Highest(High, LookbackZonas);
+  l := Lowest(Low,  LookbackZonas);
+  rr := Round(h / TickSizeParam) * TickSizeParam;
+  ss := Round(l / TickSizeParam) * TickSizeParam;
+
+  tr := ContaToquesNivel(rr, LookbackZonas);
+  ts := ContaToquesNivel(ss, LookbackZonas);
+  largura := rr - ss;
+
+  TemResistencia := (tr >= ToquesMinimosNivel);
+  TemSuporte     := (ts >= ToquesMinimosNivel);
+  DetectaZonas := TemResistencia and TemSuporte and (largura >= (MinLarguraRangeTicks * TickSizeParam));
+end;
+
+method RompeAcimaEFechaAbaixo(nivel: float): boolean
+begin
+  RompeAcimaEFechaAbaixo := (High > (nivel + Toler())) and (Close < nivel);
+end;
+
+method RompeAbaixoEFechaAcima(nivel: float): boolean
+begin
+  RompeAbaixoEFechaAcima := (Low < (nivel - Toler())) and (Close > nivel);
+end;
+
+method ConfirmacaoRetornoAoRange(nTopo, nFundo: float; maxBars: integer): boolean;
+var i: integer;
+begin
+  ConfirmacaoRetornoAoRange := False;
+  for i := 0 to maxBars - 1 begin
+    if (Close[i] > nFundo) and (Close[i] < nTopo) then begin
+      ConfirmacaoRetornoAoRange := True;
+      break;
+    end;
+  end;
+end;
+
+begin
+  if DetectaZonas(r, s) then begin
+    Resistencia := r; Suporte := s;
+
+    // desenha as linhas do range
+    PlotLine(Resistencia, clRed, psSolid, 2);
+    PlotLine(Suporte,     clWhite, psSolid, 2);
+
+    // marca falso rompimento e validação
+    if RompeAcimaEFechaAbaixo(Resistencia) then
+      PaintBar(clMaroon);
+
+    if RompeAbaixoEFechaAcima(Suporte) then
+      PaintBar(clNavy);
+
+    // seta de venda (fakeout + confirmação + IFR alto)
+    if RompeAcimaEFechaAbaixo(Resistencia)
+       and ConfirmacaoRetornoAoRange(Resistencia, Suporte, ConfirmacaoMaxBarras)
+       and (RSI(PeriodoRSI) > IFR_Venda) then
+    begin
+      PlotShape(Close, shapeDownArrow, clLime);
+      PlotText("VENDA (fakeout + IFR)", Close, clLime);
+    end;
+
+    // seta de compra (spring + confirmação + IFR baixo)
+    if RompeAbaixoEFechaAcima(Suporte)
+       and ConfirmacaoRetornoAoRange(Resistencia, Suporte, ConfirmacaoMaxBarras)
+       and (RSI(PeriodoRSI) < IFR_Compra) then
+    begin
+      PlotShape(Close, shapeUpArrow, clAqua);
+      PlotText("COMPRA (spring + IFR)", Close, clAqua);
+    end;
+  end;
+end.
