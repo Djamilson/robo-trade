@@ -1,0 +1,181 @@
+// =======================================================
+//  ROBO_IFR_LIQUIDEZ_ProfitPro.ntsl
+//  Profit Pro (NTSL) — Estratégia de Liquidez + IFR
+//  Padrões: Fakeout (resistência) e Spring (suporte)
+// =======================================================
+
+inputs:
+  // ===== ZONAS / RANGE =====
+  LookbackZonas(200),
+  TicksToleranciaNivel(2),
+  ToquesMinimosNivel(2),
+  MinLarguraRangeTicks(6),
+  ConfirmacaoMaxBarras(3),
+
+  // ===== CONFIRMAÇÃO TÉCNICA =====
+  PeriodoRSI(9),
+  IFR_Compra(35),
+  IFR_Venda(65),
+  PeriodoATR(14),
+
+  // ===== RISCO / SAÍDAS =====
+  RiscoPorTradePercent(0.6),
+  RR_Alvo(2.0),
+  SL_Buffer_ATR_Fator(0.6),
+  SL_Buffer_TicksExtra(2),
+  TakeProfitNoOutroNivel(False),
+
+  // ===== RISCO DIÁRIO / SESSÃO =====
+  PercentualPerdaDiaria(1.1),
+  MaxPerdasConsecutivas(3),
+  DiasSuspensao(2),
+  CooldownBarras(5),
+  TempoMaximoOperacaoSeg(90),
+  HoraEntradaInicial(093000),
+  HoraEntradaFinal(170000),
+  HoraSaidaForcada(164000),
+
+  // ===== FINANCEIRO =====
+  CapitalInicial(1000.0),
+  TickSizeParam(0.5),
+  ValorTick(0.5);
+
+vars:
+  // ===== Estado Diário/Execução =====
+  DiaAtual(0), DiasSemOperar(0), PerdasConsecutivas(0),
+  PerdaDiariaAcumulada(0.0), CapitalAtual(0.0),
+  StopExecution(False), CooldownRestante(0),
+
+  // ===== Trade atual =====
+  PrecoEntrada(0.0), StopLoss(0.0), TakeProfit(0.0),
+  HoraInicioOperacao(0), Lotes(0),
+
+  // ===== Zonas =====
+  Resistencia(0.0), Suporte(0.0),
+  TemResistencia(False), TemSuporte(False), TemZonas(False);
+
+// ---------- helpers ----------
+method ValorPorPonto: float begin
+  ValorPorPonto := ValorTick / TickSizeParam;
+end;
+
+method Toler: float begin
+  Toler := TicksToleranciaNivel * TickSizeParam;
+end;
+
+method ContaToquesNivel(nivel: float; lookback: integer): integer;
+var i, t: integer; tol: float;
+begin
+  t := 0; tol := Toler();
+  for i := 1 to lookback begin
+    if Abs(High[i] - nivel) <= tol then t := t + 1
+    else if Abs(Low[i] - nivel) <= tol then t := t + 1;
+  end;
+  ContaToquesNivel := t;
+end;
+
+method DetectaZonas(var r, s: float): boolean;
+var h, l, largura: float; tr, ts: integer;
+begin
+  h := Highest(High, LookbackZonas);
+  l := Lowest(Low,  LookbackZonas);
+
+  r := Round(h / TickSizeParam) * TickSizeParam;
+  s := Round(l / TickSizeParam) * TickSizeParam;
+
+  tr := ContaToquesNivel(r, LookbackZonas);
+  ts := ContaToquesNivel(s, LookbackZonas);
+
+  largura := r - s;
+
+  TemResistencia := (tr >= ToquesMinimosNivel);
+  TemSuporte     := (ts >= ToquesMinimosNivel);
+
+  DetectaZonas := TemResistencia and TemSuporte and (largura >= (MinLarguraRangeTicks * TickSizeParam));
+end;
+
+method RompeAcimaEFechaAbaixo(nivel: float): boolean
+begin
+  RompeAcimaEFechaAbaixo := (High > (nivel + Toler())) and (Close < nivel);
+end;
+
+method RompeAbaixoEFechaAcima(nivel: float): boolean
+begin
+  RompeAbaixoEFechaAcima := (Low < (nivel - Toler())) and (Close > nivel);
+end;
+
+method ConfirmacaoRetornoAoRange(nTopo, nFundo: float; maxBars: integer): boolean;
+var i: integer;
+begin
+  ConfirmacaoRetornoAoRange := False;
+  for i := 0 to maxBars - 1 begin
+    if (Close[i] > nFundo) and (Close[i] < nTopo) then begin
+      ConfirmacaoRetornoAoRange := True;
+      break;
+    end;
+  end;
+end;
+
+method CalculaLotes(precoEnt, precoSL: float): integer;
+var riscoMonetario, riscoPorContratoR$: float;
+begin
+  riscoMonetario     := (RiscoPorTradePercent / 100.0) * CapitalAtual;
+  riscoPorContratoR$ := Abs(precoEnt - precoSL) * ValorPorPonto;
+  if riscoPorContratoR$ <= 0 then CalculaLotes := 0
+  else CalculaLotes := MaxList(1, Floor(riscoMonetario / riscoPorContratoR$));
+end;
+
+method DefineSLTP(direcao: integer; nivelRef: float; var SL, TP: float);
+var atr, buffer, risco: float;
+begin
+  atr    := ATR(PeriodoATR);
+  buffer := MaxList(SL_Buffer_ATR_Fator * atr, SL_Buffer_TicksExtra * TickSizeParam);
+
+  if direcao > 0 then begin // COMPRA
+    SL := MinList(nivelRef, Close) - buffer;
+    if TakeProfitNoOutroNivel then TP := Resistencia
+    else begin
+      risco := Close - SL;
+      TP    := Close + RR_Alvo * risco;
+    end;
+  end
+  else begin // VENDA
+    SL := MaxList(nivelRef, Close) + buffer;
+    if TakeProfitNoOutroNivel then TP := Suporte
+    else begin
+      risco := SL - Close;
+      TP    := Close - RR_Alvo * risco;
+    end;
+  end;
+end;
+
+// ========== MAIN ==========
+begin
+  // Inicialização
+  if DiaAtual = 0 then begin
+    DiaAtual := Date;
+    CapitalAtual := CapitalInicial;
+    PlotText("ROBO_IFR_LIQUIDEZ (Profit Pro) iniciado", Close, clYellow);
+  end;
+
+  // Troca de dia
+  if DiaAtual <> Date then begin
+    DiaAtual := Date;
+    PerdaDiariaAcumulada := 0;
+    PerdasConsecutivas   := 0;
+    if DiasSemOperar > 0 then begin
+      DiasSemOperar := DiasSemOperar - 1;
+      StopExecution := True;
+    end else
+      StopExecution := False;
+  end;
+
+  // Regras de bloqueio
+  if PerdaDiariaAcumulada <= -(CapitalAtual * (PercentualPerdaDiaria / 100.0)) then StopExecution := True;
+  if PerdasConsecutivas >= MaxPerdasConsecutivas then StopExecution := True;
+  if (Time < HoraEntradaInicial) or (Time > HoraEntradaFinal) then StopExecution := True;
+
+  if CooldownRestante > 0 then CooldownRestante := CooldownRestante - 1;
+
+  // Detecta zonas
+  TemZonas := DetectaZonas(Resistenc
