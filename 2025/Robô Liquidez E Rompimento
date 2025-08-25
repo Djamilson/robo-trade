@@ -1,0 +1,239 @@
+-- =========================================================
+-- ROBÔ DE LIQUIDEZ, ROMPIMENTO E TRAP (EXECUÇÃO) — Profit Pro
+-- Autor: Djamilson Bot
+-- Descrição: opera rompimentos confirmados E/OU armadilhas (false break / trap)
+--            conforme a imagem: varre stops acima/abaixo do nível e volta.
+-- =========================================================
+
+-- =====================
+-- Inputs configuráveis
+-- =====================
+input:
+    -- Filtro e contexto
+    periodoMM(20),                -- período da média móvel
+    volPeriod(20),                -- período da média do volume
+    volFactor(1.0),               -- filtro: Volume > volFactor * média(Volume)
+    tol(0.0),                     -- tolerância para detectar máximas/mínimas "iguais"
+
+    -- Janela de operação
+    startTime(100000),            -- HHMMSS início (ex.: 10:00:00)
+    endTime(170000),              -- HHMMSS fim (ex.: 17:00:00)
+
+    -- Gestão de risco
+    alvoPts(200),                 -- alvo fixo em pontos (para rompimento)
+    rrTrap(2.0),                  -- alvo por R:R para traps (múltiplos do risco)
+    riscoPct(1.0),                -- % do capital a arriscar por trade
+    capital(100000.0),            -- capital de referência para sizing
+    pointValue(1.0),              -- valor financeiro de 1 ponto do ativo
+    stopBuffer(1.0),              -- colchão extra no stop (pontos)
+
+    -- Lógica: escolher quais estratégias ativar
+    tradeBreakouts(true),         -- opera rompimentos confirmados
+    tradeTraps(true),             -- opera traps (rompimento falso)
+
+    -- Parâmetros do rompimento confirmado
+    confirmBreakoutBars(1),       -- nº de barras de confirmação (>=1)
+
+    -- Parâmetros do trap (rompimento falso)
+    trapLookbackBars(3),          -- janela para considerar o rompimento inicial
+    trapReentryConfirmBars(1),    -- confirmação de retorno para dentro do nível
+    trapVolFactor(1.0);           -- volume mínimo durante o rompimento/trap
+
+-- =====================
+-- Variáveis
+-- =====================
+var:
+    suporte(0), resistencia(0), MM(0), volMed(0),
+    canTrade(false), size(1),
+    -- Rompimento
+    brkLong(false), brkShort(false),
+    longStop(0), shortStop(0),
+    -- Trap
+    trapShort(false), trapLong(false),
+    trapHigh(0), trapLow(0),       -- extremos da barra que gerou o rompimento falso
+    trapEntry(0), trapStop(0), trapRisk(0), trapTarget(0);
+
+-- =====================
+-- Funções auxiliares
+-- =====================
+method bool EqTol(numeric a, numeric b, numeric t)
+begin
+    EqTol = AbsValue(a - b) <= t;
+end;
+
+method int CalcSizeByRisk(numeric entrada, numeric stopPrice)
+begin
+    var: dist(0), riscoReais(0), contratos(1);
+    dist = AbsValue(entrada - stopPrice);
+    if dist <= 0 then
+    begin
+        CalcSizeByRisk = 1;
+        return;
+    end;
+    riscoReais = capital * (riscoPct / 100.0);
+    contratos  = IntPortion(riscoReais / (dist * pointValue));
+    if contratos < 1 then contratos = 1;
+    CalcSizeByRisk = contratos;
+end;
+
+-- =====================
+-- Cálculos base
+-- =====================
+MM     = Average(Close, periodoMM);
+volMed = Average(Volume, volPeriod);
+
+-- Detecção do nível de liquidez (3 mínimas/máximas "iguais")
+if EqTol(Low[1], Low[2], tol) and EqTol(Low[2], Low[3], tol) then suporte = Low[1];
+if EqTol(High[1], High[2], tol) and EqTol(High[2], High[3], tol) then resistencia = High[1];
+
+canTrade = (Time >= startTime) and (Time <= endTime);
+
+-- =====================
+-- 1) ROMPIMENTO CONFIRMADO (direção do rompimento)
+-- =====================
+if tradeBreakouts then
+begin
+    -- compra: fechar acima de resistência por 'confirmBreakoutBars' barras
+    brkLong = (resistencia > 0)
+           and (Close > resistencia)
+           and (Close[1] <= resistencia)
+           and (Close > MM)
+           and (Volume > volFactor * volMed);
+
+    -- venda: fechar abaixo de suporte
+    brkShort = (suporte > 0)
+            and (Close < suporte)
+            and (Close[1] >= suporte)
+            and (Close < MM)
+            and (Volume > volFactor * volMed);
+end;
+
+-- =====================
+-- 2) TRAP / ROMPIMENTO FALSO (igual ao esquema da imagem)
+--    Ideia: preço ultrapassa o nível (varre stops) e, dentro de N barras,
+--    FECHA de volta para dentro do range -> entrada CONTRÁRIA ao rompimento.
+-- =====================
+if tradeTraps then
+begin
+    -- TRAP para VENDA: rompe acima da resistência e volta para dentro
+    -- Passo A: houve barra recente com High > resistência (rompeu) e Volume forte
+    var: i(0), rompeuRes(false), idxRompeu(-1);
+    rompeuRes = false; idxRompeu = -1;
+    if resistencia > 0 then
+    begin
+        for i = 0 to trapLookbackBars - 1
+        begin
+            if High[i] > resistencia and Volume[i] > trapVolFactor * volMed then
+            begin
+                rompeuRes = true; idxRompeu = i; exit; -- pega a barra mais recente
+            end;
+        end;
+    end;
+
+    -- Passo B: confirmação de reentrada (Close abaixo de resistência)
+    trapShort = rompeuRes and (Close < resistencia) and (Close[1] >= resistencia);
+
+    if trapShort then
+    begin
+        trapHigh  = Highest(High, idxRompeu + 1); -- extremo do spike
+        trapEntry = Close;                        -- entra a mercado na próxima barra
+        trapStop  = trapHigh + stopBuffer;       -- stop acima do spike
+        trapRisk  = trapStop - trapEntry;
+        trapTarget= trapEntry - rrTrap * trapRisk; -- alvo por múltiplo do risco
+    end;
+
+    -- TRAP para COMPRA: rompe abaixo do suporte e volta para cima
+    var: rompeuSup(false), idxRompeuSup(-1);
+    rompeuSup = false; idxRompeuSup = -1;
+    if suporte > 0 then
+    begin
+        for i = 0 to trapLookbackBars - 1
+        begin
+            if Low[i] < suporte and Volume[i] > trapVolFactor * volMed then
+            begin
+                rompeuSup = true; idxRompeuSup = i; exit;
+            end;
+        end;
+    end;
+
+    trapLong = rompeuSup and (Close > suporte) and (Close[1] <= suporte);
+
+    if trapLong then
+    begin
+        trapLow   = Lowest(Low, idxRompeuSup + 1);
+        trapEntry = Close;
+        trapStop  = trapLow - stopBuffer;
+        trapRisk  = trapEntry - trapStop;
+        trapTarget= trapEntry + rrTrap * trapRisk;
+    end;
+end;
+
+-- =====================
+-- EXECUÇÃO
+-- =====================
+if canTrade and MarketPosition = 0 then
+begin
+    -- Rompimento
+    if brkLong then
+    begin
+        longStop = MaxList(suporte, resistencia - stopBuffer);
+        size     = CalcSizeByRisk(Close, longStop);
+        SetPositionSize(size);
+        Buy ("BRK_Compra") next bar at market;
+        if alvoPts > 0 then SetProfitTarget(alvoPts);
+        Sell ("BRK_StopLong") next bar at longStop stop;
+    end
+    else if brkShort then
+    begin
+        shortStop = MinList(resistencia, suporte + stopBuffer);
+        size      = CalcSizeByRisk(Close, shortStop);
+        SetPositionSize(size);
+        SellShort ("BRK_Venda") next bar at market;
+        if alvoPts > 0 then SetProfitTarget(alvoPts);
+        BuyToCover ("BRK_StopShort") next bar at shortStop stop;
+    end
+    -- Trap (contrário ao rompimento)
+    else if trapShort then
+    begin
+        size = CalcSizeByRisk(Close, trapStop);
+        SetPositionSize(size);
+        SellShort ("TRAP_Venda") next bar at market;
+        -- alvo por R:R e stop no spike
+        SellToCover ("TRAP_Stop") next bar at trapStop stop;
+        -- alvo discreto (ordem limit por pontos):
+        SetProfitTarget(0); -- desliga alvo fixo para não conflitar
+        BuyToCover ("TRAP_Alvo") next bar at trapTarget limit;
+    end
+    else if trapLong then
+    begin
+        size = CalcSizeByRisk(Close, trapStop);
+        SetPositionSize(size);
+        Buy ("TRAP_Compra") next bar at market;
+        Sell ("TRAP_Stop") next bar at trapStop stop;
+        SetProfitTarget(0);
+        Sell ("TRAP_Alvo") next bar at trapTarget limit;
+    end;
+end;
+
+-- =====================
+-- Salvaguardas e manutenção
+-- =====================
+-- Fora do horário: não abre novas posições
+if (Time < startTime or Time > endTime) and MarketPosition = 0 then
+begin
+    brkLong = false; brkShort = false; trapLong = false; trapShort = false;
+end;
+
+-- Em posição, revalida stops dos rompimentos (dinâmicos pelos níveis)
+if MarketPosition = 1 then
+begin
+    longStop = MaxList(suporte, resistencia - stopBuffer);
+    if longStop > 0 then Sell ("Upd_StopLong") next bar at longStop stop;
+end
+else if MarketPosition = -1 then
+begin
+    shortStop = MinList(resistencia, suporte + stopBuffer);
+    if shortStop > 0 then BuyToCover ("Upd_StopShort") next bar at shortStop stop;
+end;
+
+-- Fim
