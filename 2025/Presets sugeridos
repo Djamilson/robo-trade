@@ -1,0 +1,72 @@
+📊 Presets sugeridos
+🔹 Mini-índice (WIN — B3)
+
+maPeriod = 21
+
+volPeriod = 20
+
+volMultiplier = 1.5
+
+riskReward = 2.0
+
+stopBuffer = 80 (pts)
+
+pointValue = 0.20 (cada ponto = R$0,20 no mini índice)
+
+riscoPct = 0.01 (1% da banca)
+
+capital = 10_000
+
+🔹 Mini-dólar (WDO — B3)
+
+maPeriod = 21
+
+volPeriod = 20
+
+volMultiplier = 1.5
+
+riskReward = 2.0
+
+stopBuffer = 5 (pts)
+
+pointValue = 10.00 (cada ponto = R$10,00 no mini dólar)
+
+riscoPct = 0.01
+
+capital = 10_000
+
+🔹 PETR4 (ações)
+
+maPeriod = 20
+
+volPeriod = 20
+
+volMultiplier = 1.3
+
+riskReward = 2.0
+
+stopBuffer = 0.10 (10 centavos)
+
+pointValue = 100 (lote padrão de 100 ações)
+
+riscoPct = 0.01
+
+capital = 10_000
+
+🔹 VALE3 (ações)
+
+maPeriod = 20
+
+volPeriod = 20
+
+volMultiplier = 1.3
+
+riskReward = 2.0
+
+stopBuffer = 0.15 (15 centavos)
+
+pointValue = 100 (lote padrão de 100 ações)
+
+riscoPct = 0.01
+
+capital = 10_000
