@@ -1,0 +1,127 @@
+-- =========================================================
+-- ROBÔ DE LIQUIDEZ E ROMPIMENTO (EXECUÇÃO) — Profit Pro
+-- Autor: Djamilson Bot
+-- =========================================================
+
+-- =====================
+-- Inputs configuráveis
+-- =====================
+input:
+    alvoPts(200),                 -- alvo em pontos
+    periodoMM(20),                -- período da média móvel
+    volPeriod(20),                -- período da média do volume
+    volFactor(1.0),               -- filtro: Volume > volFactor * média(Volume)
+    startTime(100000),            -- HHMMSS início (ex.: 10:00:00)
+    endTime(170000),              -- HHMMSS fim (ex.: 17:00:00)
+    riscoPct(1.0),                -- % do capital a arriscar por trade
+    capital(100000.0),            -- capital de referência para sizing
+    pointValue(1.0),              -- valor financeiro de 1 ponto
+    tol(0.0),                     -- tolerância para detectar "iguais"
+    stopBuffer(1.0);              -- buffer de segurança (pontos) além do nível
+
+-- =====================
+-- Variáveis
+-- =====================
+var:
+    suporte(0), resistencia(0), MM(0),
+    volMed(0),
+    longStop(0), shortStop(0),
+    breakoutLong(false), breakoutShort(false),
+    canTrade(false),
+    size(1);
+
+-- =====================
+-- Funções auxiliares
+-- =====================
+method bool EqTol(numeric a, numeric b, numeric t)
+begin
+    EqTol = AbsValue(a - b) <= t;
+end;
+
+method int CalcSizeByRisk(numeric entrada, numeric stopPrice)
+begin
+    var: dist(0), riscoReais(0), contratos(1);
+    dist = AbsValue(entrada - stopPrice);
+    if dist <= 0 then
+    begin
+        CalcSizeByRisk = 1;
+        return;
+    end;
+    riscoReais = capital * (riscoPct / 100.0);
+    contratos  = IntPortion(riscoReais / (dist * pointValue));
+    if contratos < 1 then contratos = 1;
+    CalcSizeByRisk = contratos;
+end;
+
+-- =====================
+-- Cálculos principais
+-- =====================
+MM     = Average(Close, periodoMM);
+volMed = Average(Volume, volPeriod);
+
+if EqTol(Low[1], Low[2], tol) and EqTol(Low[2], Low[3], tol) then
+    suporte = Low[1];
+
+if EqTol(High[1], High[2], tol) and EqTol(High[2], High[3], tol) then
+    resistencia = High[1];
+
+canTrade = (Time >= startTime) and (Time <= endTime);
+
+breakoutLong  = (resistencia > 0)
+             and (Close > resistencia)
+             and (Close[1] <= resistencia)
+             and (Close > MM);
+
+breakoutShort = (suporte > 0)
+             and (Close < suporte)
+             and (Close[1] >= suporte)
+             and (Close < MM);
+
+if volFactor > 0 then
+begin
+    breakoutLong  = breakoutLong  and (Volume > volFactor * volMed);
+    breakoutShort = breakoutShort and (Volume > volFactor * volMed);
+end;
+
+-- =====================
+-- EXECUÇÃO DAS ORDENS
+-- =====================
+if canTrade and MarketPosition = 0 then
+begin
+    if breakoutLong then
+    begin
+        longStop = MaxList(suporte, resistencia - stopBuffer);
+        size     = CalcSizeByRisk(Close, longStop);
+        SetPositionSize(size);
+        Buy ("CompraRompimento") next bar at market;
+    end
+    else if breakoutShort then
+    begin
+        shortStop = MinList(resistencia, suporte + stopBuffer);
+        size      = CalcSizeByRisk(Close, shortStop);
+        SetPositionSize(size);
+        SellShort ("VendaRompimento") next bar at market;
+    end;
+end;
+
+-- =====================
+-- STOPS E ALVO
+-- =====================
+if alvoPts > 0 then SetProfitTarget(alvoPts);
+
+if MarketPosition = 1 then
+begin
+    longStop = MaxList(suporte, resistencia - stopBuffer);
+    if longStop > 0 then
+        Sell ("StopLong") next bar at longStop stop;
+end
+else if MarketPosition = -1 then
+begin
+    shortStop = MinList(resistencia, suporte + stopBuffer);
+    if shortStop > 0 then
+        BuyToCover ("StopShort") next bar at shortStop stop;
+end;
+
+-- =====================
+-- FIM DO ROBÔ
+-- =====================
