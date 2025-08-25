@@ -1,0 +1,160 @@
+-- =========================================================
+-- ROBÔ DE LIQUIDEZ E ROMPIMENTO (v2) — Profit Pro
+-- Autor: Djamilson Bot
+-- Ajustes: confirmação de candle, filtro de volume, stop dinâmico,
+-- janela de horário e posição por risco
+-- =========================================================
+
+-- =====================
+-- Inputs configuráveis
+-- =====================
+input:
+    alvoPts(200),                 -- alvo em pontos
+    periodoMM(20),                -- período da média móvel
+    volPeriod(20),                -- período da média do volume
+    volFactor(1.0),               -- fator mínimo: Volume > volFactor * média(Volume)
+    startTime(100000),            -- HHMMSS início (ex.: 10:00:00)
+    endTime(170000),              -- HHMMSS fim (ex.: 17:00:00)
+    riscoPct(1.0),                -- % do capital a arriscar por trade (ex.: 1%)
+    capital(100000.0),            -- capital de referência para sizing (se a plataforma não fornecer)
+    pointValue(1.0),              -- valor financeiro de 1 ponto (ajuste ao ativo)
+    tol(0.0),                     -- tolerância para detectar "iguais" (0 = igualdade estrita)
+    stopBuffer(1.0);              -- buffer de segurança (pontos) além do nível
+
+-- =====================
+-- Variáveis
+-- =====================
+var:
+    suporte(0), resistencia(0), MM(0),
+    volMed(0),
+    longStop(0), shortStop(0),
+    breakoutLong(false), breakoutShort(false),
+    canTrade(false),
+    size(1),
+    lastBreakoutPrice(0);
+
+-- =====================
+-- Funções auxiliares
+-- =====================
+
+{ Compara igualdade com tolerância }
+method bool EqTol(numeric a, numeric b, numeric t)
+begin
+    EqTol = AbsValue(a - b) <= t;
+end;
+
+{ Cálculo de tamanho da posição por risco (% do capital) }
+method int CalcSizeByRisk(numeric entrada, numeric stopPrice)
+begin
+    var: dist(0), riscoReais(0), contratos(1);
+    dist = AbsValue(entrada - stopPrice);        -- distância em pontos
+    if dist <= 0 then
+    begin
+        CalcSizeByRisk = 1;
+        return;
+    end;
+    riscoReais = capital * (riscoPct / 100.0);
+    contratos  = IntPortion(riscoReais / (dist * pointValue));
+    if contratos < 1 then contratos = 1;
+    CalcSizeByRisk = contratos;
+end;
+
+-- =====================
+-- Cálculos principais (a cada barra)
+-- =====================
+MM     = Average(Close, periodoMM);
+volMed = Average(Volume, volPeriod);
+
+-- Detecta SUPORTE (3 mínimas "iguais")
+if EqTol(Low[1], Low[2], tol) and EqTol(Low[2], Low[3], tol) then
+    suporte = Low[1];
+
+-- Detecta RESISTÊNCIA (3 máximas "iguais")
+if EqTol(High[1], High[2], tol) and EqTol(High[2], High[3], tol) then
+    resistencia = High[1];
+
+-- Janela de negociação
+canTrade = (Time >= startTime) and (Time <= endTime);
+
+-- Condições de rompimento com CONFIRMAÇÃO de fechamento
+breakoutLong  = (resistencia > 0)
+             and (Close >  resistencia)  -- fechamento atual acima do nível
+             and (Close[1] <= resistencia) -- barra anterior não fechou acima
+             and (Close > MM);             -- filtro de tendência
+
+breakoutShort = (suporte > 0)
+             and (Close <  suporte)
+             and (Close[1] >= suporte)
+             and (Close < MM);
+
+-- Filtro de VOLUME (rompimento com participação)
+if volFactor > 0 then
+begin
+    breakoutLong  = breakoutLong  and (Volume > volFactor * volMed);
+    breakoutShort = breakoutShort and (Volume > volFactor * volMed);
+end;
+
+-- =====================
+-- ENTRADAS
+-- =====================
+
+-- Evita múltiplas entradas: só se estiver FLAT
+if canTrade and MarketPosition = 0 then
+begin
+    { Entrada de COMPRA no rompimento confirmado da resistência }
+    if breakoutLong then
+    begin
+        longStop = MaxList(suporte, resistencia - stopBuffer); -- proteção abaixo do nível rompido (ou do suporte mais recente)
+        size     = CalcSizeByRisk(Close, longStop);
+        SetPositionSize(size);
+        Buy ("CompraRomp") next bar at market;
+        lastBreakoutPrice = Close;
+    end
+    else
+    { Entrada de VENDA no rompimento confirmado do suporte }
+    if breakoutShort then
+    begin
+        shortStop = MinList(resistencia, suporte + stopBuffer); -- proteção acima do nível rompido (ou da resistência mais recente)
+        size      = CalcSizeByRisk(Close, shortStop);
+        SetPositionSize(size);
+        SellShort ("VendaRomp") next bar at market;
+        lastBreakoutPrice = Close;
+    end;
+end;
+
+-- =====================
+-- SAÍDAS (Stops e Alvo)
+-- =====================
+
+-- Alvo fixo em pontos
+if alvoPts > 0 then SetProfitTarget(alvoPts);
+
+-- Stop dinâmico baseado no nível rompido
+if MarketPosition = 1 then
+begin
+    { recalcula um stop coerente a cada barra }
+    longStop = MaxList(suporte, resistencia - stopBuffer);
+    if longStop > 0 then
+        Sell ("StopLong") next bar at longStop stop;
+end
+else if MarketPosition = -1 then
+begin
+    shortStop = MinList(resistencia, suporte + stopBuffer);
+    if shortStop > 0 then
+        BuyToCover ("StopShort") next bar at shortStop stop;
+end;
+
+-- =====================
+-- Salvaguardas
+-- =====================
+
+-- Não entrar fora do horário mesmo que sinal esteja presente
+if (Time < startTime or Time > endTime) and MarketPosition = 0 then
+begin
+    breakoutLong  = false;
+    breakoutShort = false;
+end;
+
+-- Opcional: evita reentrada imediata no mesmo nível (debounce simples)
+-- Se desejar algo mais rígido, pode-se guardar o último suporte/resistência operado
+-- e exigir que um novo nível seja detectado antes de permitir nova entrada.
