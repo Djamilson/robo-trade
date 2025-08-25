@@ -1,0 +1,91 @@
+-- =========================================================
+-- INDICADOR DE LIQUIDEZ E ROMPIMENTO — Profit Pro
+-- Autor: Djamilson Bot
+-- Versão: Indicador visual (não executa ordens)
+-- =========================================================
+
+-- =====================
+-- Inputs configuráveis
+-- =====================
+input:
+    periodoMM(20),                -- período da média móvel
+    volPeriod(20),                -- período da média do volume
+    volFactor(1.0),               -- filtro: Volume > volFactor * média(Volume)
+    tol(0.0),                     -- tolerância para detectar "iguais" (0 = igualdade estrita)
+    stopBuffer(1.0);              -- buffer visual acima/abaixo do nível
+
+-- =====================
+-- Variáveis
+-- =====================
+var:
+    suporte(0), resistencia(0), MM(0),
+    volMed(0),
+    breakoutLong(false), breakoutShort(false);
+
+-- =====================
+-- Funções auxiliares
+-- =====================
+method bool EqTol(numeric a, numeric b, numeric t)
+begin
+    EqTol = AbsValue(a - b) <= t;
+end;
+
+-- =====================
+-- Cálculos principais
+-- =====================
+MM     = Average(Close, periodoMM);
+volMed = Average(Volume, volPeriod);
+
+-- Detecta SUPORTE (3 mínimas "iguais")
+if EqTol(Low[1], Low[2], tol) and EqTol(Low[2], Low[3], tol) then
+    suporte = Low[1];
+
+-- Detecta RESISTÊNCIA (3 máximas "iguais")
+if EqTol(High[1], High[2], tol) and EqTol(High[2], High[3], tol) then
+    resistencia = High[1];
+
+-- Condições de rompimento com CONFIRMAÇÃO de fechamento
+breakoutLong  = (resistencia > 0)
+             and (Close >  resistencia)
+             and (Close[1] <= resistencia)
+             and (Close > MM);
+
+breakoutShort = (suporte > 0)
+             and (Close <  suporte)
+             and (Close[1] >= suporte)
+             and (Close < MM);
+
+if volFactor > 0 then
+begin
+    breakoutLong  = breakoutLong  and (Volume > volFactor * volMed);
+    breakoutShort = breakoutShort and (Volume > volFactor * volMed);
+end;
+
+-- =====================
+-- DESENHOS NO GRÁFICO
+-- =====================
+
+-- Média móvel
+Plot1(MM, "MM");
+
+-- Suporte e resistência detectados
+if suporte > 0 then Plot2(suporte, "Suporte");
+if resistencia > 0 then Plot3(resistencia, "Resistencia");
+
+-- Sinais de rompimento
+if breakoutLong then
+    Plot4(Close, "BreakoutCompra");
+
+if breakoutShort then
+    Plot5(Close, "BreakoutVenda");
+
+-- Estilos dos plots
+SetPlotColor(1, Cyan);      -- MM
+SetPlotColor(2, Green);     -- Suporte
+SetPlotColor(3, Red);       -- Resistência
+SetPlotColor(4, Blue);      -- Seta/indicador de compra
+SetPlotColor(5, Magenta);   -- Seta/indicador de venda
+
+-- Para destacar visualmente, pode usar alertas também
+if breakoutLong then Alert("Possível compra no rompimento de resistência!");
+if breakoutShort then Alert("Possível venda no rompimento de suporte!");
